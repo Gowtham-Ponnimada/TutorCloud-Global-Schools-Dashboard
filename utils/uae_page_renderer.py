@@ -190,15 +190,31 @@ def _distinct(table: str, col: str) -> list:
 
 
 def _fmt(n) -> str:
+    """Format integer with comma separators – matches India format_number()."""
     try:
         n = int(n)
-        if n >= 1_000_000:
-            return f"{n/1_000_000:.2f}M"
-        if n >= 1_000:
-            return f"{n:,}"
-        return str(n)
+        return f"{n:,}"
     except Exception:
         return str(n)
+
+
+def _fmt_ptr(students, teachers) -> str:
+    """Format PTR as integer ratio string – matches India format_ptr()."""
+    try:
+        if teachers and int(teachers) > 0:
+            ratio = round(students / teachers)
+            return f"{ratio}:1"
+        return "N/A"
+    except Exception:
+        return "N/A"
+
+
+def _fmt_dec(val, decimals=2) -> str:
+    """Format a float to N decimal places."""
+    try:
+        return f"{float(val):.{decimals}f}"
+    except Exception:
+        return "N/A"
 
 
 def _export_buttons(df: pd.DataFrame, prefix: str):
@@ -376,16 +392,13 @@ def render_uae_home():
                 [UAE_YEAR] + tch_params)
         total_tch = int(df.iloc[0, 0]) if not df.empty else 0
 
-    # PTR
-    ptr_str = "N/A"
-    if total_tch > 0 and total_enr > 0:
-        ptr_val = round(total_enr / total_tch, 1)
-        ptr_str = f"{ptr_val}:1"
+    # PTR – integer ratio matching India format_ptr()
+    ptr_str = _fmt_ptr(total_enr, total_tch)
 
-    # Students per school
+    # Students per school – whole number with commas, matching India
     sps_str = "N/A"
     if total_sch > 0 and total_enr > 0:
-        sps_str = _fmt(round(total_enr / total_sch, 0))
+        sps_str = _fmt(int(round(total_enr / total_sch)))
 
     # % Female
     pct_female = None
@@ -432,12 +445,12 @@ def render_uae_home():
             fig.update_traces(texttemplate="%{text:,}", textposition="outside",
                               marker_line_color="white", marker_line_width=1.5)
             fig.update_layout(
-                height=420, plot_bgcolor="white", paper_bgcolor="white",
+                height=480, plot_bgcolor="white", paper_bgcolor="white",
                 font=dict(family="Segoe UI", size=11),
                 showlegend=False,
-                xaxis=dict(showgrid=False, title="", tickfont=dict(size=11)),
+                xaxis=dict(showgrid=False, title="", tickfont=dict(size=11), tickangle=-45),
                 yaxis=dict(showgrid=True, gridcolor="#F0F0F0", title="Students"),
-                margin=dict(l=60, r=40, t=40, b=100),
+                margin=dict(l=70, r=50, t=50, b=150),
                 coloraxis_showscale=False
             )
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -469,12 +482,12 @@ def render_uae_home():
                 fig2.update_traces(texttemplate="%{text:,}", textposition="outside",
                                    marker_line_color="white", marker_line_width=1.5)
                 fig2.update_layout(
-                    height=420, plot_bgcolor="white", paper_bgcolor="white",
+                    height=480, plot_bgcolor="white", paper_bgcolor="white",
                     font=dict(family="Segoe UI", size=11),
                     showlegend=False,
-                    xaxis=dict(showgrid=False, title="", tickfont=dict(size=11)),
+                    xaxis=dict(showgrid=False, title="", tickfont=dict(size=11), tickangle=-45),
                     yaxis=dict(showgrid=True, gridcolor="#F0F0F0", title="Schools"),
-                    margin=dict(l=60, r=40, t=40, b=100),
+                    margin=dict(l=70, r=50, t=50, b=150),
                     coloraxis_showscale=False
                 )
                 st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
@@ -668,7 +681,7 @@ def render_uae_state_dashboard():
         )
         total_tch = int(df.iloc[0, 0]) if not df.empty else 0
 
-    ptr_str = f"{round(total_enr/total_tch,1)}:1" if total_tch > 0 and total_enr > 0 else "N/A"
+    ptr_str = _fmt_ptr(total_enr, total_tch)
 
     # Display KPI row
     st.markdown('<div class="section-header">📊 Overview — UAE 2024-25</div>', unsafe_allow_html=True)
@@ -929,13 +942,14 @@ def _uae_tab_teachers(filters):
                   [UAE_YEAR])
         if not df_t.empty and not df_e.empty:
             df_ptr = df_e.merge(df_t, on="emirate", how="inner")
-            df_ptr["PTR"] = (df_ptr["students"] / df_ptr["teachers"]).round(1)
+            df_ptr["PTR"] = (df_ptr["students"] / df_ptr["teachers"]).apply(
+                lambda x: int(round(x)) if pd.notna(x) and x > 0 else 0)
             df_ptr = df_ptr.sort_values("PTR", ascending=False)
             fig = px.bar(df_ptr, x="PTR", y="emirate", orientation="h",
                          color="PTR", color_continuous_scale="RdYlGn_r",
                          labels={"emirate": "Emirate", "PTR": "Students per Teacher"},
                          text="PTR")
-            fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+            fig.update_traces(texttemplate="%{text:d}", textposition="outside")
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=340,
                               margin=dict(l=120, t=30))
             st.plotly_chart(fig, use_container_width=True)
@@ -1320,7 +1334,8 @@ def _uae_analytics_geo(filters):
                   f"FROM uae.uae_fact_enrollment WHERE academic_year=%s GROUP BY 1", [UAE_YEAR])
         if not df_t.empty and not df_e.empty:
             df = df_e.merge(df_t, on="emirate")
-            df["value"] = (df["students"] / df["teachers"]).round(1)
+            df["value"] = (df["students"] / df["teachers"]).apply(
+                lambda x: int(round(x)) if pd.notna(x) and x > 0 else 0)
             df = df[["emirate", "value"]].sort_values("value", ascending=False)
         else:
             df = pd.DataFrame()
@@ -1342,10 +1357,11 @@ def _uae_analytics_geo(filters):
             textposition="outside"
         )
         fig.update_layout(
-            height=420, plot_bgcolor="white", paper_bgcolor="white",
+            height=480, plot_bgcolor="white", paper_bgcolor="white",
             showlegend=False, coloraxis_showscale=False,
-            margin=dict(t=30, b=80),
-            xaxis=dict(tickfont=dict(size=11)),
+            font=dict(family="Segoe UI", size=11),
+            margin=dict(l=60, r=350, t=80, b=120),
+            xaxis=dict(tickfont=dict(size=11), tickangle=-45),
             yaxis=dict(title=y_label)
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -1412,11 +1428,11 @@ def _uae_analytics_perf(filters):
         total_tch = int(df.iloc[0, 0]) if not df.empty else 0
 
     if total_tch > 0:
-        ptr = round(total_enr / total_tch, 1)
+        ptr = int(round(total_enr / total_tch))
     if total_sch > 0:
-        sps = round(total_enr / total_sch, 1)
+        sps = int(round(total_enr / total_sch))
     if total_sch > 0 and total_tch > 0:
-        tps = round(total_tch / total_sch, 1)
+        tps = round(total_tch / total_sch, 2)
 
     st.markdown('<div class="section-header">📊 Key Metrics</div>', unsafe_allow_html=True)
     k1, k2, k3 = st.columns(3)
@@ -1427,7 +1443,7 @@ def _uae_analytics_perf(filters):
     k4, k5, k6 = st.columns(3)
     with k4: st.metric("📐 PTR",                   f"{ptr}:1" if ptr else "N/A")
     with k5: st.metric("📚 Students/School",        _fmt(sps) if sps else "N/A")
-    with k6: st.metric("🏫 Teachers/School",        f"{tps:.1f}" if tps else "N/A")
+    with k6: st.metric("🏫 Teachers/School",        f"{tps:.2f}" if tps else "N/A")
 
     # Avg scores by subject bar
     if subj_col and avg_col:
@@ -1524,8 +1540,8 @@ def _uae_analytics_compare(filters):
             df = _q(f"SELECT AVG({avg_col}) FROM uae.uae_fact_student_scores "
                     f"WHERE academic_year=%s AND {sc_em_col}=%s", [UAE_YEAR, emirate])
             avg_sc = round(float(df.iloc[0, 0]), 1) if not df.empty and df.iloc[0, 0] else 0
-        ptr = round(enr / tch, 1) if tch > 0 else None
-        sps = round(enr / sch, 1) if sch > 0 else None
+        ptr = int(round(enr / tch)) if tch > 0 else None
+        sps = int(round(enr / sch)) if sch > 0 else None
         return {"Students": enr, "Schools": sch, "Teachers": tch,
                 "PTR": ptr, "Students/School": sps, "Avg Score": avg_sc}
 
@@ -1538,11 +1554,22 @@ def _uae_analytics_compare(filters):
         va = m_a[k]; vb = m_b[k]
         if va is None and vb is None:
             continue
-        rows.append({
-            "Metric": k,
-            sel_a: _fmt(va) if isinstance(va, (int, float)) and va > 1 else (f"{va}:1" if k == "PTR" and va else str(va or "N/A")),
-            sel_b: _fmt(vb) if isinstance(vb, (int, float)) and vb > 1 else (f"{vb}:1" if k == "PTR" and vb else str(vb or "N/A")),
-        })
+        def _fmt_cell(k, v):
+            if v is None:
+                return "N/A"
+            if k == "PTR":
+                try: return f"{int(round(float(v)))}:1"
+                except: return "N/A"
+            if k in ("Students/School",):
+                try: return _fmt(int(round(float(v))))
+                except: return "N/A"
+            if k == "Avg Score":
+                try: return f"{float(v):.2f}"
+                except: return "N/A"
+            if isinstance(v, (int, float)):
+                return _fmt(int(v))
+            return str(v)
+        rows.append({"Metric": k, sel_a: _fmt_cell(k, va), sel_b: _fmt_cell(k, vb)})
 
     if rows:
         df_cmp = pd.DataFrame(rows)
