@@ -15,6 +15,12 @@ try:
 except ImportError:
     UAEConnector = None
 
+# India CSS (same professional look)
+try:
+    from ui_styles import inject_professional_css as _inject_css
+except ImportError:
+    _inject_css = None
+
 # ─── palette & constants ──────────────────────────────────────────────────────
 UAE_YEAR = "2024-2025"
 
@@ -240,13 +246,14 @@ def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = Non
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render_uae_home():
+    # Apply same professional CSS as India dashboard
+    if _inject_css:
+        _inject_css()
     st.markdown(UAE_CSS, unsafe_allow_html=True)
-    st.markdown(
-        '<div class="uae-flag-banner">'
-        '\U0001f1e6\U0001f1ea UAE Education Overview &mdash; Academic Year 2024&ndash;2025'
-        '</div>',
-        unsafe_allow_html=True
-    )
+
+    # Header matching India dashboard style
+    st.markdown('<div class="main-header">🇦🇪 UAE Education Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">National Education Overview — Academic Year 2024–2025</div>', unsafe_allow_html=True)
 
     filters = _build_sidebar_filters()
 
@@ -311,37 +318,29 @@ def render_uae_home():
                 pct_female = round(fem / total_g * 100, 1)
 
     with kpi_cols[0]:
-        st.markdown(
-            f'<div class="uae-kpi-card">'
-            f'<div class="uae-kpi-label">Total Enrollment</div>'
-            f'<div class="uae-kpi-value">{_fmt(total_enr)}</div>'
-            f'<div class="uae-kpi-sub">Students 2024-25</div>'
-            f'</div>', unsafe_allow_html=True
+        st.metric(
+            label="TOTAL STUDENTS",
+            value=_fmt(total_enr),
+            help="Total enrolled students (2024-25)"
         )
     with kpi_cols[1]:
-        st.markdown(
-            f'<div class="uae-kpi-card" style="border-left-color:#C8102E">'
-            f'<div class="uae-kpi-label">Total Schools</div>'
-            f'<div class="uae-kpi-value">{_fmt(total_sch)}</div>'
-            f'<div class="uae-kpi-sub">Registered 2024-25</div>'
-            f'</div>', unsafe_allow_html=True
+        st.metric(
+            label="TOTAL SCHOOLS",
+            value=_fmt(total_sch),
+            help="Registered schools (2024-25)"
         )
     with kpi_cols[2]:
-        st.markdown(
-            f'<div class="uae-kpi-card" style="border-left-color:#FFD700">'
-            f'<div class="uae-kpi-label">Emirates</div>'
-            f'<div class="uae-kpi-value">{em_count}</div>'
-            f'<div class="uae-kpi-sub">Coverage</div>'
-            f'</div>', unsafe_allow_html=True
+        st.metric(
+            label="EMIRATES",
+            value=str(em_count),
+            help="Emirates with data coverage"
         )
     with kpi_cols[3]:
         val = f"{pct_female}%" if pct_female is not None else "N/A"
-        st.markdown(
-            f'<div class="uae-kpi-card" style="border-left-color:#1E90FF">'
-            f'<div class="uae-kpi-label">Female Students</div>'
-            f'<div class="uae-kpi-value">{val}</div>'
-            f'<div class="uae-kpi-sub">Gender parity 2024-25</div>'
-            f'</div>', unsafe_allow_html=True
+        st.metric(
+            label="FEMALE STUDENTS",
+            value=val,
+            help="Gender parity index (2024-25)"
         )
 
     st.markdown("---")
@@ -419,13 +418,13 @@ def render_uae_home():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render_uae_state_dashboard():
+    # Apply same professional CSS as India dashboard
+    if _inject_css:
+        _inject_css()
     st.markdown(UAE_CSS, unsafe_allow_html=True)
-    st.markdown(
-        '<div class="uae-flag-banner">'
-        '\U0001f1e6\U0001f1ea UAE State Dashboard &mdash; Academic Year 2024&ndash;2025'
-        '</div>',
-        unsafe_allow_html=True
-    )
+    # Header matching India State Dashboard style
+    st.markdown('<div class="main-header">📊 UAE State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Emirate-Level Analysis — Academic Year 2024–2025</div>', unsafe_allow_html=True)
 
     filters = _build_sidebar_filters()
 
@@ -935,6 +934,11 @@ def _uae_tab_demographics(filters):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render_uae_analytics():
+    if _inject_css:
+        _inject_css()
+    # Header matching India Analytics style
+    st.markdown('<div class="main-header">📈 UAE Analytics</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Interactive Analytics — Academic Year 2024–2025</div>', unsafe_allow_html=True)
     st.markdown(UAE_CSS, unsafe_allow_html=True)
     st.markdown(
         '<div class="uae-flag-banner">'

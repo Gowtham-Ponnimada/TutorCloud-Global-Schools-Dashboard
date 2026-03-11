@@ -541,11 +541,23 @@ def _qp_set(**kwargs):
 def render_region_badge():
     import streamlit as st
 
-    # -- 1. Sync session_state from query_params (always) ----------------
-    _cur = _qp_get('region', 'India')
-    if _cur not in _VALID_REGIONS:
-        _cur = 'India'
-    st.session_state['selected_region'] = _cur
+    # -- 1. Sync session_state — session_state takes priority over query_params.
+    #    WHY: In Streamlit 1.54 + st.navigation(), clicking between pages in the
+    #    sidebar clears URL query params (?region=UAE disappears). session_state
+    #    IS preserved across st.navigation() page changes. So we read session_state
+    #    first (user's last explicit choice), fall back to query_params (bookmarked
+    #    URL), then default to 'India'.
+    _qp_region = _qp_get('region', None)
+    _ss_region = st.session_state.get('selected_region', None)
+
+    if _ss_region and _ss_region in _VALID_REGIONS:
+        _cur = _ss_region                      # ← session_state wins (persists across nav)
+    elif _qp_region and _qp_region in _VALID_REGIONS:
+        _cur = _qp_region                      # ← URL bookmark fallback
+        st.session_state['selected_region'] = _cur
+    else:
+        _cur = 'India'                         # ← hard default
+        st.session_state['selected_region'] = _cur
 
     # -- 2. HTML display badge (top-right, fixed, read-only) -------------
     #   Pure HTML div via st.markdown -- no React transform ancestors
