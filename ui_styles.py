@@ -541,6 +541,15 @@ def _qp_set(**kwargs):
 def render_region_badge():
     import streamlit as st
 
+    # Dedup: only render once per script run (Streamlit 1.54 does not raise
+    # DuplicateWidgetID for repeated keys — so we guard with session_state).
+    # app.py pops _badge_rendered at the start of every rerun.
+    if st.session_state.get("_badge_rendered", False):
+        return st.session_state.get("selected_region",
+               st.session_state.get("tc_region_selector", "India"))
+    st.session_state["_badge_rendered"] = True
+
+
     # -- 1. Sync session_state — session_state takes priority over query_params.
     #    WHY: In Streamlit 1.54 + st.navigation(), clicking between pages in the
     #    sidebar clears URL query params (?region=UAE disappears). session_state
@@ -579,37 +588,37 @@ def render_region_badge():
     # -- 3. Sidebar region selector (interactive, try/except dedup) ------
     #   try/except correctly handles 2nd+ calls per run without hiding
     #   the widget on subsequent reruns (thread-ID approach was broken).
-    try:
-        with st.sidebar:
-            st.markdown(
-                '<style>'
-                'div[data-testid="stSidebar"] .tc-region-block {'
-                '    padding: 6px 0 8px 0;'
-                '    border-top: 1px solid rgba(250,250,250,0.15);'
-                '    margin-top: 6px;'
-                '}'
-                'div[data-testid="stSidebar"] .tc-region-title {'
-                '    font-size: 0.78rem; font-weight: 700;'
-                '    color: rgba(250,250,250,0.85);'
-                '    margin-bottom: 4px; letter-spacing: 0.03rem;'
-                '}'
-                '</style>'
-                '<div class="tc-region-block">'
-                '<div class="tc-region-title">&#127757;&nbsp; Select Region</div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-            _chosen = st.selectbox(
-                label='Region',
-                options=_VALID_REGIONS,
-                index=_VALID_REGIONS.index(_cur),
-                key='tc_region_selector',
-                label_visibility='collapsed',
-            )
-    except Exception:
-        # DuplicateWidgetID: selectbox already registered this run.
-        # Read current value from session_state (set by first call).
-        _chosen = st.session_state.get('tc_region_selector', _cur)
+    # -- 3. Sidebar region selector ─────────────────────────────────────────
+    # UAE page file (pages/5_UAE_Dashboard.py) is archived; no duplicate
+    # widget calls are possible.  The previous bare `except Exception:` was
+    # silently swallowing real errors (e.g. on tab-switch reruns), causing the
+    # selector to disappear.  Removed in v_fix5 – render unconditionally.
+    with st.sidebar:
+        st.markdown(
+            '<style>'
+            'div[data-testid="stSidebar"] .tc-region-block {'
+            '    padding: 6px 0 8px 0;'
+            '    border-top: 1px solid rgba(250,250,250,0.15);'
+            '    margin-top: 6px;'
+            '}'
+            'div[data-testid="stSidebar"] .tc-region-title {'
+            '    font-size: 0.78rem; font-weight: 700;'
+            '    color: rgba(250,250,250,0.85);'
+            '    margin-bottom: 4px; letter-spacing: 0.03rem;'
+            '}'
+            '</style>'
+            '<div class="tc-region-block">'
+            '<div class="tc-region-title">&#127757;&nbsp; Select Region</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _chosen = st.selectbox(
+            label='Region',
+            options=_VALID_REGIONS,
+            index=_VALID_REGIONS.index(_cur),
+            key='tc_region_selector',
+            label_visibility='collapsed',
+        )
 
     # -- 4. On change: Python-side query_params write + forced rerun -----
     if _chosen != _cur:

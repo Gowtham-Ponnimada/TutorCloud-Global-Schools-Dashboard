@@ -171,3 +171,10 @@ dump.rdb
 *.pid
 *.seed
 *.pid.lock
+
+# Backup files created by apply_fix.py
+*.bak.*
+*.bak_*
+*.ARCHIVED
+__pycache__/
+*.pyc

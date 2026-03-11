@@ -144,12 +144,19 @@ _DB_PARAMS = dict(
 
 
 def _direct_q(sql: str, params=None) -> pd.DataFrame:
-    """Lightweight psycopg2 query – no session_state dependency."""
+    """Cursor-based query — bypasses pandas DBAPI2 restriction (pandas >= 2.0 fix)."""
     try:
-        import psycopg2
+        import psycopg2, psycopg2.extras
         with psycopg2.connect(**_DB_PARAMS) as conn:
-            return pd.read_sql_query(sql, conn, params=params or [])
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, params or [])
+                rows = cur.fetchall()
+                if not rows:
+                    cols = [d[0] for d in cur.description] if cur.description else []
+                    return pd.DataFrame(columns=cols)
+                return pd.DataFrame([dict(r) for r in rows])
     except Exception as e:
+        print(f"[UAE _direct_q ERROR] {e}")
         return pd.DataFrame()
 
 
@@ -255,7 +262,11 @@ def render_uae_home():
     st.markdown('<div class="main-header">🇦🇪 UAE Education Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">National Education Overview — Academic Year 2024–2025</div>', unsafe_allow_html=True)
 
-    filters = _build_sidebar_filters()
+    try:
+        filters = _build_sidebar_filters()
+    except Exception as _fex:
+        st.sidebar.warning(f"⚠️ UAE filter load error: {_fex}")
+        filters = {}
 
     enr_cols = _tbl_cols("uae_fact_enrollment")
     sch_cols = _tbl_cols("uae_fact_schools")
