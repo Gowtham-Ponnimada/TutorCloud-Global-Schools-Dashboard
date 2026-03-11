@@ -1,0 +1,188 @@
+# =============================================================================
+# LOGGING CONFIGURATION - TUTORCLOUD GLOBAL DASHBOARD
+# =============================================================================
+# YAML configuration for the logging system
+# This file can be loaded by Python's logging.config.dictConfig()
+# =============================================================================
+
+version: 1
+disable_existing_loggers: false
+
+# Formatters
+formatters:
+  simple:
+    format: '%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s'
+    datefmt: '%Y-%m-%d %H:%M:%S'
+  
+  detailed:
+    format: |
+      %(asctime)s | %(levelname)-8s | %(name)-20s
+      File: %(pathname)s:%(lineno)d
+      Function: %(funcName)s
+      %(message)s
+    datefmt: '%Y-%m-%d %H:%M:%S'
+  
+  json:
+    (): src.utils.logger.JsonFormatter
+  
+  colored:
+    (): src.utils.logger.ColoredConsoleFormatter
+
+# Handlers
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: colored
+    stream: ext://sys.stdout
+  
+  file_all:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: simple
+    filename: logs/tutorcloud_all.log
+    maxBytes: 10485760  # 10 MB
+    backupCount: 5
+    encoding: utf8
+  
+  file_error:
+    class: logging.handlers.RotatingFileHandler
+    level: ERROR
+    formatter: detailed
+    filename: logs/tutorcloud_error.log
+    maxBytes: 10485760  # 10 MB
+    backupCount: 5
+    encoding: utf8
+  
+  file_daily:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: simple
+    filename: logs/tutorcloud_daily.log
+    when: midnight
+    interval: 1
+    backupCount: 30  # Keep 30 days
+    encoding: utf8
+
+# Loggers
+loggers:
+  # Root logger
+  '':
+    level: INFO
+    handlers:
+      - console
+      - file_all
+      - file_error
+      - file_daily
+    propagate: false
+  
+  # Application loggers
+  src:
+    level: DEBUG
+    handlers:
+      - console
+      - file_all
+    propagate: false
+  
+  # Database logger
+  database:
+    level: DEBUG
+    handlers:
+      - file_all
+    propagate: false
+  
+  # API logger
+  api:
+    level: INFO
+    handlers:
+      - console
+      - file_all
+    propagate: false
+  
+  # UI logger
+  ui:
+    level: INFO
+    handlers:
+      - console
+      - file_all
+    propagate: false
+
+# Root configuration
+root:
+  level: INFO
+  handlers:
+    - console
+    - file_all
+    - file_error
+    - file_daily
+
+# =============================================================================
+# ENVIRONMENT-SPECIFIC OVERRIDES
+# =============================================================================
+
+development:
+  loggers:
+    '':
+      level: DEBUG
+    src:
+      level: DEBUG
+    database:
+      level: DEBUG
+
+production:
+  handlers:
+    console:
+      level: WARNING
+    file_all:
+      formatter: json
+    file_error:
+      formatter: json
+  loggers:
+    '':
+      level: INFO
+    src:
+      level: INFO
+    database:
+      level: INFO
+
+testing:
+  loggers:
+    '':
+      level: WARNING
+  handlers:
+    console:
+      level: WARNING
+
+# =============================================================================
+# USAGE EXAMPLES
+# =============================================================================
+#
+# 1. Load this configuration in your application:
+#
+#    import yaml
+#    import logging.config
+#    
+#    with open('config/logging.yaml', 'r') as f:
+#        config = yaml.safe_load(f)
+#    
+#    logging.config.dictConfig(config)
+#
+# 2. Get loggers in your modules:
+#
+#    import logging
+#    logger = logging.getLogger(__name__)
+#    
+#    logger.debug("Detailed debug information")
+#    logger.info("General information")
+#    logger.warning("Warning message")
+#    logger.error("Error message")
+#    logger.critical("Critical error")
+#
+# 3. Log with extra context:
+#
+#    logger.info(
+#        "User action",
+#        extra={'user_id': 'user123', 'duration': 45.2}
+#    )
+#
+# =============================================================================

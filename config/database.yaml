@@ -1,0 +1,237 @@
+# =============================================================================
+# DATABASE CONFIGURATION - TUTORCLOUD GLOBAL DASHBOARD
+# =============================================================================
+# This file contains database connection settings and query configurations
+# Override via environment variables in .env file
+# =============================================================================
+
+# --------------------------------
+# DATABASE CONNECTION
+# --------------------------------
+database:
+  # Connection Parameters
+  host: ${DB_HOST:localhost}
+  port: ${DB_PORT:5432}
+  name: ${DB_NAME:tutorcloud_db}
+  user: ${DB_USER:tutorcloud_admin}
+  password: ${DB_PASSWORD}
+  schema: ${DB_SCHEMA:india_2024_25}
+  
+  # Connection Pool
+  pool:
+    size: ${DB_POOL_SIZE:10}
+    max_overflow: ${DB_MAX_OVERFLOW:20}
+    timeout: ${DB_POOL_TIMEOUT:30}
+    recycle: ${DB_POOL_RECYCLE:3600}
+  
+  # Query Settings
+  query:
+    timeout: ${DB_QUERY_TIMEOUT:30}
+    echo: ${DB_ECHO:false}
+    
+  # SSL Configuration (for production)
+  ssl:
+    enabled: false
+    mode: require  # disable | allow | prefer | require | verify-ca | verify-full
+    cert_path:
+    key_path:
+    ca_path:
+
+# --------------------------------
+# TABLE DEFINITIONS
+# --------------------------------
+tables:
+  school_profile_1:
+    name: school_profile_1
+    primary_key: pseudocode
+    
+  school_profile_2:
+    name: school_profile_2
+    primary_key: pseudocode
+    
+  enrollment_detail_1:
+    name: enrollment_detail_1
+    primary_key: [pseudocode, item_group, item_id]
+    
+  enrollment_detail_2:
+    name: enrollment_detail_2
+    primary_key: [pseudocode, item_group, item_id]
+    
+  teacher_data:
+    name: teacher_data
+    primary_key: pseudocode
+    
+  facility_data:
+    name: facility_data
+    primary_key: pseudocode
+
+# --------------------------------
+# MATERIALIZED VIEWS
+# --------------------------------
+materialized_views:
+  kpi_all_india:
+    name: mv_kpi_all_india
+    refresh_interval: 3600  # seconds
+    refresh_concurrently: false
+    
+  kpi_state:
+    name: mv_kpi_state
+    refresh_interval: 3600
+    refresh_concurrently: true
+    indexes:
+      - state
+    
+  kpi_district:
+    name: mv_kpi_district
+    refresh_interval: 3600
+    refresh_concurrently: true
+    indexes:
+      - state
+      - district
+      - [state, district]
+
+# --------------------------------
+# QUERY TEMPLATES
+# --------------------------------
+queries:
+  # National Summary
+  national_summary: |
+    SELECT * FROM {schema}.mv_kpi_all_india;
+  
+  # State Data
+  state_data: |
+    SELECT * 
+    FROM {schema}.mv_kpi_state
+    WHERE 1=1
+      {state_filter}
+    ORDER BY total_students DESC;
+  
+  # District Data
+  district_data: |
+    SELECT * 
+    FROM {schema}.mv_kpi_district
+    WHERE 1=1
+      {state_filter}
+      {district_filter}
+    ORDER BY state, district;
+  
+  # School Detail
+  school_detail: |
+    SELECT 
+      p1.*,
+      p2.pre_pry_class_1 as pre_primary_class_1,
+      p2.class_1,
+      p2.class_2,
+      p2.class_3,
+      p2.class_4,
+      p2.class_5,
+      p2.class_6,
+      p2.class_7,
+      p2.class_8,
+      p2.class_9,
+      p2.class_10,
+      p2.class_11,
+      p2.class_12,
+      t.total_tch,
+      t.male as male_teachers,
+      t.female as female_teachers,
+      t.trained_comp as trained_teachers,
+      f.total_class_rooms,
+      f.electricity_availability,
+      f.library_availability
+    FROM {schema}.school_profile_1 p1
+    LEFT JOIN {schema}.school_profile_2 p2 ON p1.pseudocode = p2.pseudocode
+    LEFT JOIN {schema}.teacher_data t ON p1.pseudocode = t.pseudocode
+    LEFT JOIN {schema}.facility_data f ON p1.pseudocode = f.pseudocode
+    WHERE p1.pseudocode = %s;
+
+# --------------------------------
+# FILTER DEFINITIONS
+# --------------------------------
+filters:
+  state:
+    column: state
+    type: select
+    allow_multiple: true
+    
+  district:
+    column: district
+    type: select
+    allow_multiple: true
+    depends_on: state
+    
+  block:
+    column: block
+    type: select
+    allow_multiple: true
+    depends_on: district
+    
+  rural_urban:
+    column: rural_urban
+    type: select
+    options:
+      1: Rural
+      2: Urban
+      3: Unknown
+      
+  school_management:
+    column: school_management
+    type: select
+    options:
+      1: Department of Education
+      2: Tribal/Social Welfare Department
+      3: Local Body
+      4: Pvt. Aided
+      5: Pvt. Unaided
+      6: Others
+      7: Central Govt.
+      8: Unrecognised
+      90: Madarsa recognised (by Wakf board/Madarsa Board)
+      91: Madarsa unrecognised
+      
+  school_category:
+    column: school_category
+    type: select
+    options:
+      1: Primary only (1-5)
+      2: Primary with Upper Primary (1-8)
+      3: Primary with Upper Primary, Secondary and Higher Secondary (1-12)
+      4: Upper Primary only (6-8)
+      5: Upper Primary with Secondary (6-10)
+      6: Upper Primary, Secondary and Higher Secondary (6-12)
+      7: Secondary only (9-10)
+      8: Secondary with Higher Secondary (9-12)
+      10: Higher Secondary only (11-12)
+
+# --------------------------------
+# DATA TYPES
+# --------------------------------
+data_types:
+  pseudocode: bigint
+  numeric_codes: integer
+  percentages: numeric(5,2)
+  counts: bigint
+  flags: smallint
+  text: character varying
+
+# --------------------------------
+# INDEXES
+# --------------------------------
+indexes:
+  # Performance indexes on main tables
+  school_profile_1:
+    - [state]
+    - [district]
+    - [state, district]
+    - [rural_urban]
+    - [school_management]
+    
+  enrollment_detail_1:
+    - [pseudocode]
+    - [item_group, item_id]
+    
+  teacher_data:
+    - [pseudocode]
+    
+  facility_data:
+    - [pseudocode]

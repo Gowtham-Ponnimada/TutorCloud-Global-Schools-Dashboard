@@ -1,0 +1,91 @@
+# =============================================================================
+# TUTORCLOUD GLOBAL EDUCATION DASHBOARD - REQUIREMENTS
+# =============================================================================
+# Python 3.9+ required
+# Last Updated: 2026-02-05
+# =============================================================================
+
+# Core Framework
+dash==2.18.0
+dash-bootstrap-components==1.6.0
+dash-core-components==2.0.0
+dash-html-components==2.0.0
+dash-table==5.0.0
+
+# Data Visualization
+plotly==5.24.0
+kaleido==0.2.1  # For image export
+
+# Data Processing
+pandas==2.2.2
+numpy==1.26.4
+scipy==1.13.0
+
+# Database
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.31
+alembic==1.13.2  # Database migrations
+
+# Configuration Management
+pyyaml==6.0.1
+python-dotenv==1.0.1
+pydantic==2.8.2
+pydantic-settings==2.4.0
+
+# Geospatial
+geopandas==0.14.4
+shapely==2.0.4
+pyproj==3.6.1
+
+# Caching & Performance
+redis==5.0.7
+flask-caching==2.3.0
+
+# Authentication & Security (optional for future)
+flask-login==0.6.3
+flask-bcrypt==1.0.1
+PyJWT==2.9.0
+
+# API & Networking
+requests==2.32.3
+urllib3==2.2.2
+
+# Utilities
+python-dateutil==2.9.0
+pytz==2024.1
+iso639==0.1.4
+iso3166==2.1.1
+
+# Logging & Monitoring
+structlog==24.4.0
+coloredlogs==15.0.1
+
+# Testing
+pytest==8.3.2
+pytest-cov==5.0.0
+pytest-mock==3.14.0
+pytest-asyncio==0.23.8
+
+# Code Quality
+black==24.8.0
+flake8==7.1.1
+isort==5.13.2
+mypy==1.11.1
+
+# Documentation
+Sphinx==7.4.7
+sphinx-rtd-theme==2.0.0
+
+# Excel Export
+openpyxl==3.1.5
+xlsxwriter==3.2.0
+
+# Development Tools
+ipython==8.26.0
+jupyter==1.0.0
+ipdb==0.13.13
+
+# Production Server
+gunicorn==22.0.0
+waitress==3.0.0  # Windows-compatible WSGI server
+streamlit==1.54.0

@@ -1,0 +1,1156 @@
+"""
+TutorCloud Global Dashboard - State Dashboard
+Version B.8.4.3 - Custom Board Grouping
+Schema: india_2024_25
+Production Ready - 2026-02-16
+
+Enhancements in B.8.4.3:
+- Custom board grouping (7 groups)
+- UNION query for dual board columns (sec + hsec)
+- Groups: CBSE, State Board, ICSE/ISC, IB, IGCSE, NIOS & Anglo Indian, Others
+- Icons in board names
+- No duplicate counting for dual affiliations
+"""
+
+import streamlit as st
+# import psycopg2  # PERF_FIX: orphaned — all connections use get_db_connection() pool
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from code_mappings import (
+    DB_CONFIG, 
+    SCHEMA,
+    TABLE_SCHOOL_PROFILE, 
+    TABLE_ENROLLMENT_SECONDARY as TABLE_ENROLLMENT,
+    TABLE_TEACHER,
+    format_ptr,
+    format_number,
+    get_filter_options,
+    SCHOOL_TYPE_MAP,
+    MANAGEMENT_MAP,
+    RURAL_URBAN_MAP,
+    COL_STATE_NAME,
+    COL_DISTRICT_NAME,
+    COL_BLOCK_NAME,
+    COL_SCHOOL_TYPE,
+    COL_MANAGEMENT,
+    COL_RURAL_URBAN
+)
+from code_mappings import get_db_connection  # PERF_FIX: shared pool
+
+from ui_styles import inject_professional_css
+from ui_styles import render_region_badge
+
+# Board grouping configuration (B.8.3.0)
+BOARD_MAP = {
+    '1': '📚 CBSE',
+    '2': '🏛️ State Board',
+    '3': '🎓 ICSE/ISC',
+    '4': '🌍 IB (International Baccalaureate)',
+    '5': '🎒 NIOS & Anglo Indian',
+    '6': '🌐 IGCSE',
+    '7': '📦 Others',
+    '8': '🎒 NIOS & Anglo Indian',
+    '9': '📦 Others',
+    '0': '🏛️ State Board',  # Code 0 = Not Applicable/Primary (same as State Board)
+    # Integer keys
+    1: '📚 CBSE',
+    2: '🏛️ State Board',
+    3: '🎓 ICSE/ISC',
+    4: '🌍 IB (International Baccalaureate)',
+    5: '🎒 NIOS & Anglo Indian',
+    6: '🌐 IGCSE',
+    7: '📦 Others',
+    8: '🎒 NIOS & Anglo Indian',
+    9: '📦 Others',
+    0: '🏛️ State Board',  # Code 0 = Not Applicable/Primary (same as State Board)
+}
+
+BOARD_GROUPS = {
+    'CBSE': [1],
+    'STATE_BOARD': [0, 2],  # Include code 0 (Not Applicable/Primary)
+    'ICSE': [3],
+    'IB': [4],
+    'IGCSE': [6],
+    'NIOS_ANGLO': [5, 8],
+    'OTHERS': [7, 9],
+}
+
+GROUP_DISPLAY_NAMES = {
+    'CBSE': '📚 CBSE',
+    'STATE_BOARD': '🏛️ State Board',
+    'ICSE': '🎓 ICSE/ISC',
+    'IB': '🌍 IB (International Baccalaureate)',
+    'IGCSE': '🌐 IGCSE',
+    'NIOS_ANGLO': '🎒 NIOS & Anglo Indian',
+    'OTHERS': '📦 Others',
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_group_for_code(code):
+    """Map board code to group name"""
+    code_to_group = {}
+    for group_name, codes in BOARD_GROUPS.items():
+        for c in codes:
+            code_to_group[str(c)] = group_name
+            code_to_group[int(c)] = group_name
+    return code_to_group.get(str(code), code_to_group.get(int(code), 'OTHERS'))
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_codes_for_group(group_name):
+    """Get all codes for a group"""
+    return BOARD_GROUPS.get(group_name, [])
+
+COL_BOARD_CODE = 'aff_board_sec' 
+
+# ========================================
+# MANAGEMENT GROUPS (B.8.4.0)
+# ========================================
+MANAGEMENT_GROUPS = {
+    'GOVERNMENT': [1, 2, 3, 7, 8, 91, 92, 93, 94, 95, 96, 97, 101, 102],
+    'PRIVATE': [4, 5],
+    'OTHERS': [6, 89, 90, 98, 99]
+}
+
+MANAGEMENT_GROUP_NAMES = {
+    'GOVERNMENT': '🏫 Government',
+    'PRIVATE': '💼 Private',
+    'OTHERS': '📦 Others'
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_management_codes(group_name):
+    """Get management codes for a group"""
+    clean_name = group_name.split(' ', 1)[1] if ' ' in group_name else group_name
+    return MANAGEMENT_GROUPS.get(clean_name.upper(), [])
+
+# ========================================
+# SCHOOL CATEGORY GROUPS (B.8.4.0)
+# ========================================
+CATEGORY_GROUP_NAMES = {
+    'PRIMARY': '🎒 Primary (K-5)',
+    'UPPER_PRIMARY': '📖 Upper Primary (6-8)',
+    'SECONDARY': '🎓 Secondary (9-10)',
+    'HIGHER_SECONDARY': '🎯 Higher Secondary (11-12)'
+}
+
+# ========================================
+# SCHOOL TYPE CONFIGURATION (B.8.4.1)
+# ========================================
+SCHOOL_TYPE_GROUPS = {
+    '1': '👦 Boys Only',
+    '2': '👧 Girls Only',
+    '3': '👫 Co-educational',
+    1: '👦 Boys Only',
+    2: '👧 Girls Only',
+    3: '👫 Co-educational'
+}
+
+def build_category_filter_sql(selected_categories):
+    """Build SQL conditions for grade-based category filtering"""
+    if not selected_categories:
+        return None
+    conditions = []
+    for category in selected_categories:
+        if 'Primary (K-5)' in category:
+            conditions.append("(sp.lowclass <= 5)")
+        elif 'Upper Primary' in category:
+            conditions.append("(sp.lowclass <= 8 AND sp.highclass >= 6)")
+        elif 'Secondary (9-10)' in category:
+            conditions.append("(sp.lowclass <= 10 AND sp.highclass >= 9)")
+        elif 'Higher Secondary' in category:
+            conditions.append("(sp.highclass >= 11)")
+    return " OR ".join(conditions) if conditions else None
+
+# Page config
+st.set_page_config(
+    page_title="State Dashboard - TutorCloud",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
+
+# ── Region bootstrap v_final (DIAGNOSE_AND_FIX_PERMANENT) ───────────────────
+# Single authoritative region bootstrap.  render_region_badge() called ONCE.
+# Do not add additional render_region_badge() calls elsewhere in this file.
+try:
+    from ui_styles import render_region_badge as _render_rb
+except ImportError:
+    _render_rb = None
+
+if _render_rb:
+    _render_rb()
+
+from utils.uae_page_renderer import render_uae_state_dashboard
+_current_region = st.session_state.get("selected_region", "India")
+if _current_region == "UAE":
+    render_uae_state_dashboard()
+    st.stop()
+elif _current_region != "India":
+    st.markdown(
+        "<div style='text-align:center;padding:80px 20px'>"
+        "<h1>🌍 Coming Soon</h1>"
+        "<p style='font-size:1.1rem;color:#666'>"
+        "This region is not yet available. Select <strong>India</strong> to continue.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.stop()
+# ── End region bootstrap ─────────────────────────────────────────────────────
+
+
+# Inject professional CSS styling (matches Home page)
+inject_professional_css()
+if 'previous_state' not in st.session_state:
+    st.session_state.previous_state = None
+if 'previous_district' not in st.session_state:
+    st.session_state.previous_district = None
+
+# Database connection (NO CACHING)
+# PERF_FIX: local get_db_connection replaced by shared pool
+# def get_db_connection():
+#     """Create a fresh database connection"""
+#     try:
+#         conn = psycopg2.connect(**DB_CONFIG)
+#         return conn
+#     except Exception as e:
+#         st.error(f"Database connection failed: {str(e)}")
+#         return None
+
+# Helper functions
+def safe_int(value, default=0):
+    """Convert value to int, return default if None or invalid"""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+# Fetch functions
+@st.cache_data(ttl=7200, show_spinner=False)  # PERF_FIX: quasi-static
+def fetch_states():
+    """Fetch all states"""
+    conn = get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        query = f"""
+        SELECT DISTINCT {COL_STATE_NAME}
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+        WHERE {COL_STATE_NAME} IS NOT NULL
+        ORDER BY {COL_STATE_NAME}
+        """
+        df = pd.read_sql(query, conn)
+        return df[COL_STATE_NAME].tolist()
+    except Exception as e:
+        st.error(f"Error fetching states: {str(e)}")
+        return []
+    finally:
+        conn.close()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_districts(state):
+    """Fetch districts for selected state"""
+    if not state:
+        return []
+    
+    conn = get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        query = f"""
+        SELECT DISTINCT {COL_DISTRICT_NAME}
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+        WHERE {COL_STATE_NAME} = %s
+        AND {COL_DISTRICT_NAME} IS NOT NULL
+        ORDER BY {COL_DISTRICT_NAME}
+        """
+        df = pd.read_sql(query, conn, params=(state,))
+        return df[COL_DISTRICT_NAME].tolist()
+    except Exception as e:
+        st.error(f"Error fetching districts: {str(e)}")
+        return []
+    finally:
+        conn.close()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_blocks(state, district):
+    """Fetch blocks for selected state and district"""
+    if not state:
+        return []
+    
+    conn = get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        query = f"""
+        SELECT DISTINCT {COL_BLOCK_NAME}
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+        WHERE {COL_STATE_NAME} = %s
+        """
+        params = [state]
+        
+        if district and district != 'All':
+            query += f" AND {COL_DISTRICT_NAME} = %s"
+            params.append(district)
+        
+        query += f" AND {COL_BLOCK_NAME} IS NOT NULL ORDER BY {COL_BLOCK_NAME}"
+        
+        df = pd.read_sql(query, conn, params=params)
+        return df[COL_BLOCK_NAME].tolist()
+    except Exception as e:
+        st.error(f"Error fetching blocks: {str(e)}")
+        return []
+    finally:
+        conn.close()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_boards(state, district=None):
+    """Fetch available board GROUPS for selected state/district (B.8.3.0)"""
+    if not state:
+        return []
+    
+    conn = get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        # Query BOTH columns with UNION
+        query = f"""
+        SELECT DISTINCT board_code
+        FROM (
+            SELECT aff_board_sec as board_code
+            FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+            WHERE {COL_STATE_NAME} = %s
+            AND aff_board_sec IS NOT NULL
+            
+            UNION
+            
+            SELECT aff_board_hsec as board_code
+            FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+            WHERE {COL_STATE_NAME} = %s
+            AND aff_board_hsec IS NOT NULL
+        ) combined_boards
+        """
+        
+        params = [state, state]
+        
+        if district and district != 'All':
+            query = f"""
+            SELECT DISTINCT board_code
+            FROM (
+                SELECT aff_board_sec as board_code
+                FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+                WHERE {COL_STATE_NAME} = %s
+                AND {COL_DISTRICT_NAME} = %s
+                AND aff_board_sec IS NOT NULL
+                
+                UNION
+                
+                SELECT aff_board_hsec as board_code
+                FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+                WHERE {COL_STATE_NAME} = %s
+                AND {COL_DISTRICT_NAME} = %s
+                AND aff_board_hsec IS NOT NULL
+            ) combined_boards
+            """
+            params = [state, district, state, district]
+        
+        query += " ORDER BY board_code"
+        
+        df = pd.read_sql(query, conn, params=params)
+        board_codes = [str(x) for x in df['board_code'].tolist()]
+        
+        # Map codes to groups
+        groups_found = set()
+        for code in board_codes:
+            group = get_group_for_code(code)
+            groups_found.add(group)
+        
+        # Return sorted list of group names
+        return sorted(list(groups_found))
+        
+    except Exception as e:
+        st.error(f"Error fetching boards: {str(e)}")
+        return []
+    finally:
+        conn.close()
+
+def build_filter_conditions(filters):
+    """Build WHERE clause from filters - safe with missing keys"""
+    conditions = []
+    params = []
+    
+    # Use .get() with defaults to handle missing keys
+    if filters.get('state'):
+        conditions.append(f"sp.{COL_STATE_NAME} = %s")
+        params.append(filters['state'])
+    
+    if filters.get('district') and filters.get('district') != 'All':
+        conditions.append(f"sp.{COL_DISTRICT_NAME} = %s")
+        params.append(filters['district'])
+    
+    if filters.get('block') and filters.get('block') != 'All':
+        conditions.append(f"sp.{COL_BLOCK_NAME} = %s")
+        params.append(filters['block'])
+    
+    if filters.get('management_groups') and len(filters['management_groups']) > 0:
+        all_mgmt_codes = []
+        for group_name in filters['management_groups']:
+            codes = get_management_codes(group_name)
+            all_mgmt_codes.extend(codes)
+        all_mgmt_codes = list(set(all_mgmt_codes))
+        if all_mgmt_codes:
+            mgmt_placeholders = ','.join(['%s'] * len(all_mgmt_codes))
+            conditions.append(f"sp.managment IN ({mgmt_placeholders})")
+            params.extend(all_mgmt_codes)
+    
+    
+    
+    if filters.get('location') and filters.get('location') != 'All':
+        conditions.append(f"sp.{COL_RURAL_URBAN} = %s")
+        params.append(filters['location'])
+    
+    # School Type filter (B.8.4.1)
+    if filters.get('school_type_new') and len(filters['school_type_new']) > 0:
+        type_codes = []
+        for type_name in filters['school_type_new']:
+            for code, name in SCHOOL_TYPE_GROUPS.items():
+                if name == type_name:
+                    type_codes.append(int(code) if isinstance(code, str) else code)
+        
+        if type_codes:
+            type_placeholders = ','.join(['%s'] * len(type_codes))
+            conditions.append(f"sp.{COL_SCHOOL_TYPE} IN ({type_placeholders})")
+            params.extend(type_codes)
+    
+    # School Category filter (B.8.4.0)
+    if filters.get('school_categories') and len(filters['school_categories']) > 0:
+        category_sql = build_category_filter_sql(filters['school_categories'])
+        if category_sql:
+            conditions.append(f"({category_sql})")
+    
+    # Board filter (multi-select with GROUPS - B.8.3.0)
+    if filters.get('boards') and len(filters['boards']) > 0:
+        # Expand groups to individual codes
+        all_codes = []
+        for group_name in filters['boards']:
+            codes = get_codes_for_group(group_name)
+            all_codes.extend(codes)
+        
+        # Remove duplicates
+        all_codes = list(set(all_codes))
+        
+        if all_codes:
+            # Convert codes to strings to match VARCHAR column type
+            all_codes_str = [str(code) for code in all_codes]
+            board_placeholders = ','.join(['%s'] * len(all_codes_str))
+            # Check BOTH columns with OR logic
+            conditions.append(
+                f"(sp.aff_board_sec IN ({board_placeholders}) OR "
+                f"sp.aff_board_hsec IN ({board_placeholders}))"
+            )
+            params.extend(all_codes_str)
+            params.extend(all_codes_str)  # Twice: once for sec, once for hsec
+    
+    where_clause = " AND " + " AND ".join(conditions) if conditions else ""
+    return where_clause, params
+
+# PERF_FIX: @st.cache_data(ttl=3600, show_spinner=False) disabled – 'filters' is dict → always MISS
+# @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_state_overview(filters):
+    """Fetch state overview with NULL-safe aggregation"""
+    conn = get_db_connection()
+    if not conn:
+        return {}
+    
+    try:
+        where_clause, params = build_filter_conditions(filters)
+        
+        query = f"""
+        WITH enrollment_data AS (
+            SELECT 
+                e.pseudocode,
+                SUM(
+                    COALESCE(e.cpp_b, 0) + COALESCE(e.cpp_g, 0) +
+                    COALESCE(e.c1_b, 0) + COALESCE(e.c1_g, 0) +
+                    COALESCE(e.c2_b, 0) + COALESCE(e.c2_g, 0) +
+                    COALESCE(e.c3_b, 0) + COALESCE(e.c3_g, 0) +
+                    COALESCE(e.c4_b, 0) + COALESCE(e.c4_g, 0) +
+                    COALESCE(e.c5_b, 0) + COALESCE(e.c5_g, 0) +
+                    COALESCE(e.c6_b, 0) + COALESCE(e.c6_g, 0) +
+                    COALESCE(e.c7_b, 0) + COALESCE(e.c7_g, 0) +
+                    COALESCE(e.c8_b, 0) + COALESCE(e.c8_g, 0) +
+                    COALESCE(e.c9_b, 0) + COALESCE(e.c9_g, 0) +
+                    COALESCE(e.c10_b, 0) + COALESCE(e.c10_g, 0) +
+                    COALESCE(e.c11_b, 0) + COALESCE(e.c11_g, 0) +
+                    COALESCE(e.c12_b, 0) + COALESCE(e.c12_g, 0)
+                ) AS total_students,
+                SUM(
+                    COALESCE(e.cpp_b, 0) + COALESCE(e.c1_b, 0) + COALESCE(e.c2_b, 0) + 
+                    COALESCE(e.c3_b, 0) + COALESCE(e.c4_b, 0) + COALESCE(e.c5_b, 0) + 
+                    COALESCE(e.c6_b, 0) + COALESCE(e.c7_b, 0) + COALESCE(e.c8_b, 0) +
+                    COALESCE(e.c9_b, 0) + COALESCE(e.c10_b, 0) + COALESCE(e.c11_b, 0) + 
+                    COALESCE(e.c12_b, 0)
+                ) AS male_students,
+                SUM(
+                    COALESCE(e.cpp_g, 0) + COALESCE(e.c1_g, 0) + COALESCE(e.c2_g, 0) + 
+                    COALESCE(e.c3_g, 0) + COALESCE(e.c4_g, 0) + COALESCE(e.c5_g, 0) + 
+                    COALESCE(e.c6_g, 0) + COALESCE(e.c7_g, 0) + COALESCE(e.c8_g, 0) +
+                    COALESCE(e.c9_g, 0) + COALESCE(e.c10_g, 0) + COALESCE(e.c11_g, 0) + 
+                    COALESCE(e.c12_g, 0)
+                ) AS female_students
+            FROM {SCHEMA}.{TABLE_ENROLLMENT} e
+            GROUP BY e.pseudocode
+        ),
+        teacher_data AS (
+            SELECT 
+                pseudocode,
+                MAX(COALESCE(total_tch, 0)) AS total_teachers
+            FROM {SCHEMA}.{TABLE_TEACHER}
+            GROUP BY pseudocode
+        )
+        SELECT 
+            COUNT(DISTINCT sp.pseudocode) AS total_schools,
+            COUNT(DISTINCT CASE WHEN ed.total_students > 0 THEN sp.pseudocode END) AS schools_with_enrollment,
+            COUNT(DISTINCT sp.{COL_DISTRICT_NAME}) AS total_districts,
+            COALESCE(SUM(ed.total_students), 0) AS total_students,
+            COALESCE(SUM(ed.male_students), 0) AS male_students,
+            COALESCE(SUM(ed.female_students), 0) AS female_students,
+            COALESCE(SUM(td.total_teachers), 0) AS total_teachers
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE} sp
+        LEFT JOIN enrollment_data ed ON sp.pseudocode = ed.pseudocode
+        LEFT JOIN teacher_data td ON sp.pseudocode = td.pseudocode
+        WHERE 1=1 {where_clause}
+        """
+        
+        result = pd.read_sql(query, conn, params=params)
+        
+        if result.empty:
+            return {
+                'total_schools': 0,
+                'schools_with_enrollment': 0,
+                'total_districts': 0,
+                'total_students': 0,
+                'male_students': 0,
+                'female_students': 0,
+                'total_teachers': 0,
+                'state_ptr': 'N/A'
+            }
+        
+        overview = result.iloc[0].to_dict()
+        
+        # Calculate PTR with uniform X:1 formatting
+        total_students = safe_int(overview.get('total_students', 0))
+        total_teachers = safe_int(overview.get('total_teachers', 0))
+        
+        if total_teachers > 0 and total_students > 0:
+            ptr_ratio = total_students / total_teachers
+            overview['state_ptr'] = format_ptr(ptr_ratio)
+        else:
+            overview['state_ptr'] = 'N/A'
+        
+        return overview
+        
+    except Exception as e:
+        st.error(f"Error fetching state overview: {str(e)}")
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
+        return {}
+    finally:
+        conn.close()
+
+# PERF_FIX: @st.cache_data(ttl=3600, show_spinner=False) disabled – 'filters' is dict → always MISS
+# @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_district_analysis(filters):
+    """Fetch district-level PTR analysis"""
+    conn = get_db_connection()
+    if not conn:
+        return pd.DataFrame()
+    
+    try:
+        where_clause, params = build_filter_conditions(filters)
+        
+        query = f"""
+        WITH enrollment_data AS (
+            SELECT 
+                e.pseudocode,
+                SUM(
+                    COALESCE(e.cpp_b, 0) + COALESCE(e.cpp_g, 0) +
+                    COALESCE(e.c1_b, 0) + COALESCE(e.c1_g, 0) +
+                    COALESCE(e.c2_b, 0) + COALESCE(e.c2_g, 0) +
+                    COALESCE(e.c3_b, 0) + COALESCE(e.c3_g, 0) +
+                    COALESCE(e.c4_b, 0) + COALESCE(e.c4_g, 0) +
+                    COALESCE(e.c5_b, 0) + COALESCE(e.c5_g, 0) +
+                    COALESCE(e.c6_b, 0) + COALESCE(e.c6_g, 0) +
+                    COALESCE(e.c7_b, 0) + COALESCE(e.c7_g, 0) +
+                    COALESCE(e.c8_b, 0) + COALESCE(e.c8_g, 0) +
+                    COALESCE(e.c9_b, 0) + COALESCE(e.c9_g, 0) +
+                    COALESCE(e.c10_b, 0) + COALESCE(e.c10_g, 0) +
+                    COALESCE(e.c11_b, 0) + COALESCE(e.c11_g, 0) +
+                    COALESCE(e.c12_b, 0) + COALESCE(e.c12_g, 0)
+                ) AS total_students
+            FROM {SCHEMA}.{TABLE_ENROLLMENT} e
+            GROUP BY e.pseudocode
+        ),
+        teacher_data AS (
+            SELECT 
+                pseudocode,
+                MAX(COALESCE(total_tch, 0)) AS total_teachers
+            FROM {SCHEMA}.{TABLE_TEACHER}
+            GROUP BY pseudocode
+        )
+        SELECT 
+            sp.{COL_DISTRICT_NAME} AS district,
+            COUNT(DISTINCT sp.pseudocode) AS total_schools,
+            COALESCE(SUM(ed.total_students), 0) AS total_students,
+            COALESCE(SUM(td.total_teachers), 0) AS total_teachers,
+            CASE 
+                WHEN SUM(td.total_teachers) > 0 THEN 
+                    ROUND(CAST(SUM(ed.total_students) AS NUMERIC) / NULLIF(SUM(td.total_teachers), 0), 2)
+                ELSE 0
+            END AS ptr_ratio
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE} sp
+        LEFT JOIN enrollment_data ed ON sp.pseudocode = ed.pseudocode
+        LEFT JOIN teacher_data td ON sp.pseudocode = td.pseudocode
+        WHERE sp.{COL_DISTRICT_NAME} IS NOT NULL {where_clause}
+        GROUP BY sp.{COL_DISTRICT_NAME}
+        ORDER BY total_schools DESC
+        """
+        
+        df = pd.read_sql(query, conn, params=params)
+        
+        # Format PTR uniformly as X:1
+        df['PTR'] = df['ptr_ratio'].apply(lambda x: format_ptr(x) if x > 0 else 'N/A')
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"Error fetching district analysis: {str(e)}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+# PERF_FIX: @st.cache_data(ttl=3600, show_spinner=False) disabled – 'filters' is dict → always MISS
+# @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_block_analysis(filters):
+    """Fetch block/taluk-level PTR analysis for selected district"""
+    conn = get_db_connection()
+    if not conn:
+        return pd.DataFrame()
+    
+    # Only fetch if a specific district is selected
+    if not filters.get('district') or filters['district'] == 'All':
+        return pd.DataFrame()
+    
+    try:
+        # CRITICAL: Exclude block filter itself for block-level analysis
+        # We want to see ALL blocks in the district, not just the selected one
+        filters_without_block = {k: v for k, v in filters.items() if k != 'block'}
+        where_clause, params = build_filter_conditions(filters_without_block)
+        
+        query = f"""
+        WITH enrollment_data AS (
+            SELECT 
+                e.pseudocode,
+                SUM(
+                    COALESCE(e.cpp_b, 0) + COALESCE(e.cpp_g, 0) +
+                    COALESCE(e.c1_b, 0) + COALESCE(e.c1_g, 0) +
+                    COALESCE(e.c2_b, 0) + COALESCE(e.c2_g, 0) +
+                    COALESCE(e.c3_b, 0) + COALESCE(e.c3_g, 0) +
+                    COALESCE(e.c4_b, 0) + COALESCE(e.c4_g, 0) +
+                    COALESCE(e.c5_b, 0) + COALESCE(e.c5_g, 0) +
+                    COALESCE(e.c6_b, 0) + COALESCE(e.c6_g, 0) +
+                    COALESCE(e.c7_b, 0) + COALESCE(e.c7_g, 0) +
+                    COALESCE(e.c8_b, 0) + COALESCE(e.c8_g, 0) +
+                    COALESCE(e.c9_b, 0) + COALESCE(e.c9_g, 0) +
+                    COALESCE(e.c10_b, 0) + COALESCE(e.c10_g, 0) +
+                    COALESCE(e.c11_b, 0) + COALESCE(e.c11_g, 0) +
+                    COALESCE(e.c12_b, 0) + COALESCE(e.c12_g, 0)
+                ) AS total_students
+            FROM {SCHEMA}.{TABLE_ENROLLMENT} e
+            GROUP BY e.pseudocode
+        ),
+        teacher_data AS (
+            SELECT 
+                pseudocode,
+                MAX(COALESCE(total_tch, 0)) AS total_teachers
+            FROM {SCHEMA}.{TABLE_TEACHER}
+            GROUP BY pseudocode
+        )
+        SELECT 
+            sp.{COL_BLOCK_NAME} AS block,
+            COUNT(DISTINCT sp.pseudocode) AS total_schools,
+            COALESCE(SUM(ed.total_students), 0) AS total_students,
+            COALESCE(SUM(td.total_teachers), 0) AS total_teachers,
+            CASE 
+                WHEN SUM(td.total_teachers) > 0 THEN 
+                    ROUND(CAST(SUM(ed.total_students) AS NUMERIC) / NULLIF(SUM(td.total_teachers), 0), 2)
+                ELSE 0
+            END AS ptr_ratio
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE} sp
+        LEFT JOIN enrollment_data ed ON sp.pseudocode = ed.pseudocode
+        LEFT JOIN teacher_data td ON sp.pseudocode = td.pseudocode
+        WHERE sp.{COL_BLOCK_NAME} IS NOT NULL {where_clause}
+        GROUP BY sp.{COL_BLOCK_NAME}
+        ORDER BY total_schools DESC
+        """
+        
+        df = pd.read_sql(query, conn, params=params)
+        
+        # Format PTR uniformly as X:1
+        df['PTR'] = df['ptr_ratio'].apply(lambda x: format_ptr(x) if x > 0 else 'N/A')
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"Error fetching block analysis: {str(e)}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+# PERF_FIX: @st.cache_data(ttl=3600, show_spinner=False) disabled – 'filters' is dict → always MISS
+# @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_grade_enrollment(filters):
+    """Fetch grade-wise enrollment breakdown (Boys vs Girls)"""
+    conn = get_db_connection()
+    if not conn:
+        return {}
+    
+    try:
+        where_clause, params = build_filter_conditions(filters)
+        
+        query = f"""
+        WITH enrollment_data AS (
+            SELECT 
+                e.pseudocode,
+                SUM(COALESCE(e.cpp_b, 0)) AS cpp_boys,
+                SUM(COALESCE(e.cpp_g, 0)) AS cpp_girls,
+                SUM(COALESCE(e.c1_b, 0)) AS c1_boys,
+                SUM(COALESCE(e.c1_g, 0)) AS c1_girls,
+                SUM(COALESCE(e.c2_b, 0)) AS c2_boys,
+                SUM(COALESCE(e.c2_g, 0)) AS c2_girls,
+                SUM(COALESCE(e.c3_b, 0)) AS c3_boys,
+                SUM(COALESCE(e.c3_g, 0)) AS c3_girls,
+                SUM(COALESCE(e.c4_b, 0)) AS c4_boys,
+                SUM(COALESCE(e.c4_g, 0)) AS c4_girls,
+                SUM(COALESCE(e.c5_b, 0)) AS c5_boys,
+                SUM(COALESCE(e.c5_g, 0)) AS c5_girls,
+                SUM(COALESCE(e.c6_b, 0)) AS c6_boys,
+                SUM(COALESCE(e.c6_g, 0)) AS c6_girls,
+                SUM(COALESCE(e.c7_b, 0)) AS c7_boys,
+                SUM(COALESCE(e.c7_g, 0)) AS c7_girls,
+                SUM(COALESCE(e.c8_b, 0)) AS c8_boys,
+                SUM(COALESCE(e.c8_g, 0)) AS c8_girls,
+                SUM(COALESCE(e.c9_b, 0)) AS c9_boys,
+                SUM(COALESCE(e.c9_g, 0)) AS c9_girls,
+                SUM(COALESCE(e.c10_b, 0)) AS c10_boys,
+                SUM(COALESCE(e.c10_g, 0)) AS c10_girls,
+                SUM(COALESCE(e.c11_b, 0)) AS c11_boys,
+                SUM(COALESCE(e.c11_g, 0)) AS c11_girls,
+                SUM(COALESCE(e.c12_b, 0)) AS c12_boys,
+                SUM(COALESCE(e.c12_g, 0)) AS c12_girls
+            FROM {SCHEMA}.{TABLE_ENROLLMENT} e
+            GROUP BY e.pseudocode
+        )
+        SELECT 
+            COALESCE(SUM(ed.cpp_boys), 0) AS pre_primary_boys,
+            COALESCE(SUM(ed.cpp_girls), 0) AS pre_primary_girls,
+            COALESCE(SUM(ed.c1_boys), 0) AS class_1_boys,
+            COALESCE(SUM(ed.c1_girls), 0) AS class_1_girls,
+            COALESCE(SUM(ed.c2_boys), 0) AS class_2_boys,
+            COALESCE(SUM(ed.c2_girls), 0) AS class_2_girls,
+            COALESCE(SUM(ed.c3_boys), 0) AS class_3_boys,
+            COALESCE(SUM(ed.c3_girls), 0) AS class_3_girls,
+            COALESCE(SUM(ed.c4_boys), 0) AS class_4_boys,
+            COALESCE(SUM(ed.c4_girls), 0) AS class_4_girls,
+            COALESCE(SUM(ed.c5_boys), 0) AS class_5_boys,
+            COALESCE(SUM(ed.c5_girls), 0) AS class_5_girls,
+            COALESCE(SUM(ed.c6_boys), 0) AS class_6_boys,
+            COALESCE(SUM(ed.c6_girls), 0) AS class_6_girls,
+            COALESCE(SUM(ed.c7_boys), 0) AS class_7_boys,
+            COALESCE(SUM(ed.c7_girls), 0) AS class_7_girls,
+            COALESCE(SUM(ed.c8_boys), 0) AS class_8_boys,
+            COALESCE(SUM(ed.c8_girls), 0) AS class_8_girls,
+            COALESCE(SUM(ed.c9_boys), 0) AS class_9_boys,
+            COALESCE(SUM(ed.c9_girls), 0) AS class_9_girls,
+            COALESCE(SUM(ed.c10_boys), 0) AS class_10_boys,
+            COALESCE(SUM(ed.c10_girls), 0) AS class_10_girls,
+            COALESCE(SUM(ed.c11_boys), 0) AS class_11_boys,
+            COALESCE(SUM(ed.c11_girls), 0) AS class_11_girls,
+            COALESCE(SUM(ed.c12_boys), 0) AS class_12_boys,
+            COALESCE(SUM(ed.c12_girls), 0) AS class_12_girls
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE} sp
+        LEFT JOIN enrollment_data ed ON sp.pseudocode = ed.pseudocode
+        WHERE 1=1 {where_clause}
+        """
+        
+        result = pd.read_sql(query, conn, params=params)
+        
+        if result.empty:
+            return {}
+        
+        return result.iloc[0].to_dict()
+        
+    except Exception as e:
+        st.error(f"Error fetching grade enrollment: {str(e)}")
+        return {}
+    finally:
+        conn.close()
+
+# Main app
+def main():
+    # Header
+    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
+    
+    # Sidebar filters
+    with st.sidebar:
+        st.markdown("### 🔍 Apply Filters")
+        
+        # State filter
+        states = fetch_states()
+        selected_state = st.selectbox(
+            "🗺️ Select State/UT",
+            options=states,
+            key='state_filter'
+        )
+        
+        # No manual reset needed - dynamic keys handle it automatically
+        filters = {'state': selected_state}
+        
+        # District filter (dynamic key includes state to force reset)
+        districts = fetch_districts(selected_state) if selected_state else []
+        district_key = f'district_filter_{selected_state}'  # Key changes with state
+        selected_district = st.selectbox(
+            "🏘️ Select District",
+            options=['All'] + districts,
+            index=0,  # Always start at 'All' when key changes
+            key=district_key
+        )
+        
+        # No manual reset needed - dynamic keys handle it automatically
+        filters['district'] = selected_district
+        
+        # Block filter (dynamic key includes state+district to force reset)
+        blocks = fetch_blocks(selected_state, selected_district) if selected_state else []
+        block_key = f'block_filter_{selected_state}_{selected_district}'  # Key changes with parent
+        selected_block = st.selectbox(
+            "📍 Select Block/Taluk",
+            options=['All'] + blocks,
+            index=0,  # Always start at 'All' when key changes
+            key=block_key
+        )
+        filters['block'] = selected_block
+        
+        # School Type filter (dynamic key to reset with state)
+        # Location filter (dynamic key to reset with state)
+        locations = get_filter_options(RURAL_URBAN_MAP)
+        location_key = f'location_filter_{selected_state}'
+        selected_location = st.selectbox(
+            "🌆 Location",
+            options=['All'] + locations,
+            index=0,
+            format_func=lambda x: RURAL_URBAN_MAP.get(x, x) if x != 'All' else 'All',
+            key=location_key
+        )
+        filters['location'] = selected_location if selected_location != 'All' else None
+        
+        # School Type filter (B.8.4.1) - multi-select
+        school_type_key_new = f'school_type_new_filter_{selected_state}'
+        selected_school_types = st.multiselect(
+            "📖 School Type",
+            options=list(set(SCHOOL_TYPE_GROUPS.values())),
+            default=[],
+            help="Boys Only, Girls Only, Co-educational",
+            key=school_type_key_new
+        )
+        filters['school_type_new'] = selected_school_types
+        
+        # Management Groups filter (B.8.4.0) - multi-select
+        management_groups_key = f'management_groups_filter_{selected_state}'
+        selected_management_groups = st.multiselect(
+            "🏛️ Management Type",
+            options=list(MANAGEMENT_GROUP_NAMES.values()),
+            default=[],
+            help="Government (71%), Private (28%), Others (1%)",
+            key=management_groups_key
+        )
+        filters['management_groups'] = selected_management_groups
+        
+        # School Category filter (B.8.4.0) - grade-based multi-select
+        category_groups_key = f'category_groups_filter_{selected_state}'
+        selected_school_categories = st.multiselect(
+            "📚 School Category (Grade Level)",
+            options=list(CATEGORY_GROUP_NAMES.values()),
+            default=[],
+            help="Filter by grade levels: K-5, 6-8, 9-10, 11-12",
+            key=category_groups_key
+        )
+        filters['school_categories'] = selected_school_categories
+        
+        
+        # Board filter (multi-select)
+        available_boards = fetch_boards(selected_state, selected_district)
+        if available_boards:
+            # Use hash to create safe key (handles special chars in state names)
+            board_key = f'board_filter_{hash(selected_state)}'
+            # Simple format function that always works
+            def format_board(code):
+                try:
+                    return BOARD_MAP.get(str(code), str(code))
+                except:
+                    return str(code)
+            
+            selected_boards = st.multiselect(
+                "📚 Board Affiliation",
+                options=available_boards,
+                format_func=format_board,
+                help="Schools can have multiple board affiliations. Select one or more.",
+                key=board_key
+            )
+            filters['boards'] = selected_boards
+        else:
+            filters['boards'] = []
+        
+        # Active filters display
+        active_filters = []
+        if selected_state:
+            active_filters.append(selected_state)
+        if selected_district and selected_district != 'All':
+            active_filters.append(selected_district)
+        if selected_block and selected_block != 'All':
+            active_filters.append(selected_block)
+        if selected_location and selected_location != 'All':
+            active_filters.append(RURAL_URBAN_MAP.get(selected_location, selected_location))
+        if filters.get('boards'):
+            for board in filters['boards']:
+                active_filters.append(BOARD_MAP.get(board, board) if BOARD_MAP else board)
+        
+        # Add management groups
+        if filters.get('management_groups'):
+            for mgmt in filters['management_groups']:
+                active_filters.append(f"Management: {mgmt}")
+        
+        # Add school categories
+        if filters.get('school_categories'):
+            for category in filters['school_categories']:
+                active_filters.append(f"Category: {category}")
+        
+        if active_filters:
+            st.markdown("---")
+            st.markdown("### ✅ Active Filters")
+            for f in active_filters:
+                st.markdown(f"- {f}")
+    
+    # Main content
+    if not selected_state:
+        st.info("👈 Please select a State/UT from the sidebar to view data")
+        return
+    
+    # Fetch data
+    overview = fetch_state_overview(filters)
+    
+    if not overview:
+        st.warning("No data available for selected filters")
+        return
+    
+    # State Overview Section
+    st.markdown('<div class="section-header">📊 Overview: ' + selected_state + '</div>', unsafe_allow_html=True)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("🏫 Total Schools", format_number(safe_int(overview.get('total_schools', 0))))
+    
+    with col2:
+        st.metric("🎓 Schools with Enrollment", format_number(safe_int(overview.get('schools_with_enrollment', 0))))
+    
+    with col3:
+        st.metric("🗺️ Districts", format_number(safe_int(overview.get('total_districts', 0))))
+    
+    with col4:
+        st.metric("📊 State PTR", overview.get('state_ptr', 'N/A'))
+    
+    col5, col6 = st.columns(2)
+    
+    with col5:
+        st.metric("👥 Total Students", format_number(safe_int(overview.get('total_students', 0))))
+    
+    with col6:
+        st.metric("👨‍🏫 Total Teachers", format_number(safe_int(overview.get('total_teachers', 0))))
+    
+    # Grade-Level Enrollment Analysis
+    st.markdown('<div class="section-header">📚 Grade-Level Enrollment (Boys vs Girls)</div>', unsafe_allow_html=True)
+    
+    grade_data = fetch_grade_enrollment(filters)
+    
+    if grade_data:
+        # Prepare data for chart
+        grades = ['Pre-Primary', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
+        boys = [
+            safe_int(grade_data.get('pre_primary_boys', 0)),
+            safe_int(grade_data.get('class_1_boys', 0)),
+            safe_int(grade_data.get('class_2_boys', 0)),
+            safe_int(grade_data.get('class_3_boys', 0)),
+            safe_int(grade_data.get('class_4_boys', 0)),
+            safe_int(grade_data.get('class_5_boys', 0)),
+            safe_int(grade_data.get('class_6_boys', 0)),
+            safe_int(grade_data.get('class_7_boys', 0)),
+            safe_int(grade_data.get('class_8_boys', 0)),
+            safe_int(grade_data.get('class_9_boys', 0)),
+            safe_int(grade_data.get('class_10_boys', 0)),
+            safe_int(grade_data.get('class_11_boys', 0)),
+            safe_int(grade_data.get('class_12_boys', 0))
+        ]
+        girls = [
+            safe_int(grade_data.get('pre_primary_girls', 0)),
+            safe_int(grade_data.get('class_1_girls', 0)),
+            safe_int(grade_data.get('class_2_girls', 0)),
+            safe_int(grade_data.get('class_3_girls', 0)),
+            safe_int(grade_data.get('class_4_girls', 0)),
+            safe_int(grade_data.get('class_5_girls', 0)),
+            safe_int(grade_data.get('class_6_girls', 0)),
+            safe_int(grade_data.get('class_7_girls', 0)),
+            safe_int(grade_data.get('class_8_girls', 0)),
+            safe_int(grade_data.get('class_9_girls', 0)),
+            safe_int(grade_data.get('class_10_girls', 0)),
+            safe_int(grade_data.get('class_11_girls', 0)),
+            safe_int(grade_data.get('class_12_girls', 0))
+        ]
+        
+        # Create grouped bar chart
+        fig_grades = go.Figure(data=[
+            go.Bar(name='Boys', x=grades, y=boys, marker_color='#3498db',
+                   text=[format_number(b) for b in boys], textposition='outside'),
+            go.Bar(name='Girls', x=grades, y=girls, marker_color='#e74c3c',
+                   text=[format_number(g) for g in girls], textposition='outside')
+        ])
+        
+        fig_grades.update_layout(
+            showlegend=True,
+            xaxis_tickangle=-45,
+            margin=dict(l=60, r=220, t=80, b=120)
+        )
+        
+        st.plotly_chart(fig_grades, config={"displayModeBar": False}, use_container_width=True)
+    
+    # District-Level Analysis
+    st.markdown('<div class="section-header">📍 District-Level PTR Analysis</div>', unsafe_allow_html=True)
+    
+    district_df = fetch_district_analysis(filters)
+    
+    if not district_df.empty:
+        # Display table
+        display_df = district_df[['district', 'total_schools', 'total_students', 'total_teachers', 'PTR']].copy()
+        display_df.columns = ['District', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
+        
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # PTR Comparison Chart
+        if len(district_df) > 1:
+            fig_ptr = px.bar(
+                district_df.head(20),
+                x='district',
+                y='ptr_ratio',
+                title='District PTR Comparison (Top 20 by School Count)',
+                labels={'district': 'District', 'ptr_ratio': 'Pupil-Teacher Ratio'},
+                color='ptr_ratio',
+                color_continuous_scale='RdYlGn_r',
+                hover_data={'ptr_ratio': False}  # Hide numeric ratio in hover
+            )
+            
+            # Update hover template to show formatted PTR
+            fig_ptr.update_traces(
+                hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>',
+                customdata=district_df.head(20)[['PTR']].values
+            )
+            
+            fig_ptr.update_layout(
+                showlegend=True,
+                xaxis_tickangle=-45,
+                margin=dict(l=60, r=220, t=80, b=120)
+            )
+            st.plotly_chart(fig_ptr, config={"displayModeBar": False}, use_container_width=True)
+        
+        # Download button
+        csv = display_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download District Data (CSV)",
+            data=csv,
+            file_name=f"district_analysis_{selected_state.lower().replace(' ', '_')}.csv",
+            mime="text/csv"
+        )
+    
+    # Block/Taluk-Level Analysis (only if specific district selected)
+    if selected_district and selected_district != 'All':
+        st.markdown(f'<div class="section-header">🏘️ Block/Taluk-Level PTR Analysis: {selected_district}</div>', unsafe_allow_html=True)
+        
+        block_df = fetch_block_analysis(filters)
+        
+        if not block_df.empty:
+            # Display table
+            display_block_df = block_df[['block', 'total_schools', 'total_students', 'total_teachers', 'PTR']].copy()
+            display_block_df.columns = ['Block/Taluk', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
+            
+            st.dataframe(
+                display_block_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # PTR Comparison Chart for Blocks
+            if len(block_df) > 1:
+                fig_block_ptr = px.bar(
+                    block_df.head(20),
+                    x='block',
+                    y='ptr_ratio',
+                    title=f'Block/Taluk PTR Comparison in {selected_district} (Top 20 by School Count)',
+                    labels={'block': 'Block/Taluk', 'ptr_ratio': 'Pupil-Teacher Ratio'},
+                    color='ptr_ratio',
+                    color_continuous_scale='RdYlGn_r',
+                    hover_data={'ptr_ratio': False}
+                )
+                
+                # Update hover template to show formatted PTR
+                fig_block_ptr.update_traces(
+                    hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>',
+                    customdata=block_df.head(20)[['PTR']].values
+                )
+                
+                fig_block_ptr.update_layout(
+                    showlegend=True,
+                    xaxis_tickangle=-45,
+                    margin=dict(l=60, r=220, t=80, b=120)
+                )
+                st.plotly_chart(fig_block_ptr, config={"displayModeBar": False}, use_container_width=True)
+            
+            # Download button for block data
+            csv_block = display_block_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Block/Taluk Data (CSV)",
+                data=csv_block,
+                file_name=f"block_analysis_{selected_district.lower().replace(' ', '_')}.csv",
+                mime="text/csv",
+                key='download_block'
+            )
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+        <div style='text-align: center; padding: 20px; margin-top: 40px; border-top: 1px solid #e0e0e0;'>
+        <p style='margin: 0; color: #666; font-size: 0.95rem;'>TutorCloud Global Dashboard</p>
+        <p style='margin: 5px 0 0 0; color: #666; font-size: 0.95rem;'>© 2026 TutorCloud. All rights reserved.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()

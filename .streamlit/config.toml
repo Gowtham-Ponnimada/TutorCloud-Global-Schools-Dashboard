@@ -1,0 +1,30 @@
+[server]
+headless              = true
+port                  = 8501
+runOnSave             = false
+fileWatcherType       = "none"
+maxUploadSize         = 50
+enableCORS            = false
+enableXsrfProtection  = true
+
+[browser]
+gatherUsageStats = false
+serverAddress    = "0.0.0.0"  # PERF_FIX: bind all interfaces
+
+[client]
+toolbarMode      = "minimal"
+showErrorDetails = false
+
+[runner]
+fastReruns   = true
+magicEnabled = false
+
+[global]
+showWarningOnDirectExecution = false
+
+[theme]
+primaryColor             = "#1e88e5"
+backgroundColor          = "#F5F7FA"
+secondaryBackgroundColor = "#ffffff"
+textColor                = "#212121"
+font                     = "sans serif"

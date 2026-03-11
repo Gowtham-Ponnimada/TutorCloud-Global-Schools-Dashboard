@@ -1,0 +1,118 @@
+Academic_Year,Gender_EN,JobCategory,Nationality,Total Staff
+2018,Unreported,Others,National,32
+2018,Unreported,Others,Non-National,777
+2018,Unreported,Principal,National,6
+2018,Unreported,Principal,Non-National,5
+2018,Unreported,Vice Principal,National,4
+2018,Unreported,Vice Principal,Non-National,4
+2018,Female,Others,National,4809
+2018,Female,Others,Non-National,8070
+2018,Female,Principal,National,470
+2018,Female,Principal,Non-National,98
+2018,Female,Vice Principal,National,181
+2018,Female,Vice Principal,Non-National,60
+2018,Male,Others,National,935
+2018,Male,Others,Non-National,5240
+2018,Male,Principal,National,148
+2018,Male,Principal,Non-National,99
+2018,Male,Vice Principal,National,74
+2018,Male,Vice Principal,Non-National,35
+2019,Unreported,Others,National,29
+2019,Unreported,Others,Non-National,609
+2019,Unreported,Principal,National,4
+2019,Unreported,Principal,Non-National,3
+2019,Unreported,Vice Principal,National,4
+2019,Unreported,Vice Principal,Non-National,5
+2019,Female,Others,National,4864
+2019,Female,Others,Non-National,8361
+2019,Female,Principal,National,365
+2019,Female,Principal,Non-National,102
+2019,Female,Vice Principal,National,234
+2019,Female,Vice Principal,Non-National,72
+2019,Male,Others,National,872
+2019,Male,Others,Non-National,5182
+2019,Male,Principal,National,145
+2019,Male,Principal,Non-National,118
+2019,Male,Vice Principal,National,104
+2019,Male,Vice Principal,Non-National,58
+2020,Unreported,Others,National,41
+2020,Unreported,Others,Non-National,493
+2020,Unreported,Principal,National,6
+2020,Unreported,Principal,Non-National,3
+2020,Unreported,Vice Principal,National,10
+2020,Unreported,Vice Principal,Non-National,3
+2020,Female,Others,National,8405
+2020,Female,Others,Non-National,14965
+2020,Female,Principal,National,512
+2020,Female,Principal,Non-National,136
+2020,Female,Vice Principal,National,469
+2020,Female,Vice Principal,Non-National,174
+2020,Male,Others,National,1411
+2020,Male,Others,Non-National,6716
+2020,Male,Principal,National,199
+2020,Male,Principal,Non-National,163
+2020,Male,Vice Principal,National,236
+2020,Male,Vice Principal,Non-National,187
+2021,Unreported,Others,National,146
+2021,Unreported,Others,Non-National,555
+2021,Unreported,Principal,National,7
+2021,Unreported,Principal,Non-National,209
+2021,Unreported,Vice Principal,National,10
+2021,Unreported,Vice Principal,Non-National,1
+2021,Female,Others,National,10234
+2021,Female,Others,Non-National,15119
+2021,Female,Principal,National,387
+2021,Female,Principal,Non-National,121
+2021,Female,Vice Principal,National,225
+2021,Female,Vice Principal,Non-National,155
+2021,Male,Others,National,1599
+2021,Male,Others,Non-National,6717
+2021,Male,Principal,National,141
+2021,Male,Principal,Non-National,154
+2021,Male,Vice Principal,National,132
+2021,Male,Vice Principal,Non-National,767
+2022,Unreported,Others,National,44
+2022,Unreported,Others,Non-National,157
+2022,Unreported,Principal,Non-National,1
+2022,Unreported,Vice Principal,National,2
+2022,Female,Others,National,7284
+2022,Female,Others,Non-National,5584
+2022,Female,Principal,National,338
+2022,Female,Principal,Non-National,104
+2022,Female,Vice Principal,National,193
+2022,Female,Vice Principal,Non-National,109
+2022,Male,Others,National,1077
+2022,Male,Others,Non-National,3194
+2022,Male,Principal,National,118
+2022,Male,Principal,Non-National,113
+2022,Male,Vice Principal,National,120
+2022,Male,Vice Principal,Non-National,81
+2023,Unreported,Others,Non-National,23
+2023,Female,Others,National,7330
+2023,Female,Others,Non-National,9825
+2023,Female,Principal,National,380
+2023,Female,Principal,Non-National,90
+2023,Female,Vice Principal,National,194
+2023,Female,Vice Principal,Non-National,147
+2023,Male,Others,National,961
+2023,Male,Others,Non-National,3769
+2023,Male,Principal,National,115
+2023,Male,Principal,Non-National,118
+2023,Male,Vice Principal,National,110
+2023,Male,Vice Principal,Non-National,102
+2024,Unreported,Others,Non-National,16
+2024,Female,Others,National,6838
+2024,Female,Others,Non-National,4183
+2024,Female,Principal,National,314
+2024,Female,Principal,Non-National,64
+2024,Female,Vice Principal,National,86
+2024,Female,Vice Principal,Non-National,74
+2024,Male,Others,National,861
+2024,Male,Others,Non-National,2224
+2024,Male,Principal,National,86
+2024,Male,Principal,Non-National,76
+2024,Male,Vice Principal,National,68
+2024,Male,Vice Principal,Non-National,57
+,,,,
+,,,,
+,,*Unreported Data means its not entered in the system,,

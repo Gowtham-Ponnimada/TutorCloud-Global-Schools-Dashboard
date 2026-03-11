@@ -1,0 +1,13 @@
+import streamlit as st
+
+# TutorCloud India Dashboard
+# India-only navigation — restored to pre-UAE state
+
+pages = [
+    st.Page("pages/1_🏠_Home.py",            title="Home"),
+    st.Page("pages/2_📊_State_Dashboard.py", title="State Dashboard"),
+    st.Page("pages/4_📈_Analytics.py",       title="Analytics"),
+]
+
+pg = st.navigation(pages)
+pg.run()

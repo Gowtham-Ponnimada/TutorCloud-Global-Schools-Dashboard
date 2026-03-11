@@ -1,0 +1,718 @@
+"""
+TutorCloud Global Dashboard - Analytics Page
+Schema: india_2024_25 (K-12 Coverage)
+Date: 2026-02-17
+Author: Analytics Development Team
+Description: Comprehensive analytics with geographic maps, performance metrics,
+             comparative analysis, and custom report builder
+Fix: Uses enrollment_detail_2 (secondary) to match State Dashboard PTR calculations
+     PTR format: Always displays as integer (e.g., 26:1 not 26.03:1)
+"""
+
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from io import BytesIO
+
+# Import database connection and constants
+from code_mappings import (
+    get_db_connection,
+    SCHEMA,
+    TABLE_SCHOOL_PROFILE,
+    TABLE_ENROLLMENT_SECONDARY as TABLE_ENROLLMENT,  # Using secondary enrollment like State Dashboard
+    TABLE_TEACHER,
+    COL_PSEUDOCODE,
+    COL_STATE_NAME,
+    COL_DISTRICT_NAME,
+    COL_BLOCK_NAME,
+    COL_SCHOOL_TYPE,
+    COL_MANAGEMENT,
+    COL_RURAL_URBAN
+)
+
+from ui_styles import inject_professional_css
+from ui_styles import render_region_badge
+
+# ============================================================================
+# PAGE CONFIGURATION
+# ============================================================================
+# st.cache_data.clear()  # DISABLED 2026-02-25: cleared ALL pages cache on every Analytics load
+st.set_page_config(
+    page_title="Analytics Dashboard",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
+
+
+
+
+# ── Region selector bootstrap (reads ?region= URL param) ─────────────────
+# V2: always sync from query_params on every rerun (no session_state guard)
+_region_param = st.query_params.get("region", "India")
+_valid_regions = ["India", "UAE", "Australia", "New Zealand", "United States"]
+st.session_state["selected_region"] = (
+    _region_param if _region_param in _valid_regions else "India"
+)
+# ────────────────────────────────────────────────────────────────────────────────
+
+
+# ── Region gate v3 ────────────────────────────────────────────
+# V2: read directly from st.query_params (never stale session_state)
+# V3: render_region_badge() before st.stop() so user can always switch back
+_active_region = st.query_params.get("region", "India")
+if _active_region not in ["India", "UAE", "Australia", "New Zealand", "United States"]:
+    _active_region = "India"
+st.session_state["selected_region"] = _active_region   # keep session in sync
+if _active_region != "India":
+    from ui_styles import render_region_badge  # local import: self-contained
+    render_region_badge()   # render dropdown BEFORE stop so user can switch back
+    st.markdown(
+        f'''
+        <div style="
+            display:flex; flex-direction:column; align-items:center;
+            justify-content:center; min-height:60vh; text-align:center;
+            padding:40px 24px;">
+          <div style="font-size:3.5rem; margin-bottom:16px;">🚧</div>
+          <h2 style="
+              font-size:1.6rem; font-weight:700; color:#1e293b;
+              margin:0 0 10px;">
+            {_active_region} Dashboard &mdash; Coming Soon
+          </h2>
+          <p style="color:#6b7280; font-size:0.95rem;
+                     max-width:420px; margin:0;">
+            The <strong>{_active_region}</strong> region dashboard is currently
+            under development.<br>Select
+            <strong>India</strong> from the Region selector above to view
+            live data.
+          </p>
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
+    st.stop()
+# ── End region gate v3 ──────────────────────────────────────────
+
+# Inject professional CSS styling (matches Home page)
+inject_professional_css()
+render_region_badge()
+st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
+
+# ============================================================================
+# DATABASE HELPER FUNCTIONS (USING STATE DASHBOARD PROVEN PATTERNS)
+# ============================================================================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_state_metrics():
+    """Get aggregated metrics for all states - Uses proven State Dashboard pattern with correct enrollment table"""
+    conn = get_db_connection()
+    if not conn:
+        st.error("Database connection failed")
+        return pd.DataFrame()
+    
+    try:
+        query = f"""
+        WITH enrollment_data AS (
+            SELECT
+                e.pseudocode,
+                SUM(
+                    COALESCE(e.cpp_b, 0) + COALESCE(e.cpp_g, 0) +
+                    COALESCE(e.c1_b, 0) + COALESCE(e.c1_g, 0) +
+                    COALESCE(e.c2_b, 0) + COALESCE(e.c2_g, 0) +
+                    COALESCE(e.c3_b, 0) + COALESCE(e.c3_g, 0) +
+                    COALESCE(e.c4_b, 0) + COALESCE(e.c4_g, 0) +
+                    COALESCE(e.c5_b, 0) + COALESCE(e.c5_g, 0) +
+                    COALESCE(e.c6_b, 0) + COALESCE(e.c6_g, 0) +
+                    COALESCE(e.c7_b, 0) + COALESCE(e.c7_g, 0) +
+                    COALESCE(e.c8_b, 0) + COALESCE(e.c8_g, 0) +
+                    COALESCE(e.c9_b, 0) + COALESCE(e.c9_g, 0) +
+                    COALESCE(e.c10_b, 0) + COALESCE(e.c10_g, 0) +
+                    COALESCE(e.c11_b, 0) + COALESCE(e.c11_g, 0) +
+                    COALESCE(e.c12_b, 0) + COALESCE(e.c12_g, 0)
+                ) AS total_students
+            FROM {SCHEMA}.{TABLE_ENROLLMENT} e
+            GROUP BY e.pseudocode
+        ),
+        teacher_data AS (
+            SELECT
+                pseudocode,
+                MAX(COALESCE(total_tch, 0)) AS total_teachers
+            FROM {SCHEMA}.{TABLE_TEACHER}
+            GROUP BY pseudocode
+        )
+        SELECT
+            UPPER(sp.{COL_STATE_NAME}) as state,
+            COUNT(DISTINCT sp.pseudocode) AS total_schools,
+            COALESCE(SUM(ed.total_students), 0) AS total_students,
+            COALESCE(SUM(td.total_teachers), 0) AS total_teachers,
+            CASE 
+                WHEN SUM(td.total_teachers) > 0 
+                THEN ROUND(SUM(ed.total_students)::numeric / SUM(td.total_teachers), 0)
+                ELSE NULL 
+            END AS ptr,
+            CASE 
+                WHEN COUNT(DISTINCT sp.pseudocode) > 0 
+                THEN ROUND(SUM(ed.total_students)::numeric / COUNT(DISTINCT sp.pseudocode), 2)
+                ELSE NULL 
+            END AS students_per_school
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE} sp
+        LEFT JOIN enrollment_data ed ON sp.pseudocode = ed.pseudocode
+        LEFT JOIN teacher_data td ON sp.pseudocode = td.pseudocode
+        WHERE sp.{COL_STATE_NAME} IS NOT NULL
+        GROUP BY UPPER(sp.{COL_STATE_NAME})
+        ORDER BY state
+        """
+        
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error fetching state metrics: {str(e)}")
+        if conn:
+            conn.close()
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_district_metrics(state_name):
+    """Get aggregated metrics for districts in a state"""
+    conn = get_db_connection()
+    if not conn:
+        return pd.DataFrame()
+    
+    try:
+        query = f"""
+        WITH enrollment_data AS (
+            SELECT
+                e.pseudocode,
+                SUM(
+                    COALESCE(e.cpp_b, 0) + COALESCE(e.cpp_g, 0) +
+                    COALESCE(e.c1_b, 0) + COALESCE(e.c1_g, 0) +
+                    COALESCE(e.c2_b, 0) + COALESCE(e.c2_g, 0) +
+                    COALESCE(e.c3_b, 0) + COALESCE(e.c3_g, 0) +
+                    COALESCE(e.c4_b, 0) + COALESCE(e.c4_g, 0) +
+                    COALESCE(e.c5_b, 0) + COALESCE(e.c5_g, 0) +
+                    COALESCE(e.c6_b, 0) + COALESCE(e.c6_g, 0) +
+                    COALESCE(e.c7_b, 0) + COALESCE(e.c7_g, 0) +
+                    COALESCE(e.c8_b, 0) + COALESCE(e.c8_g, 0) +
+                    COALESCE(e.c9_b, 0) + COALESCE(e.c9_g, 0) +
+                    COALESCE(e.c10_b, 0) + COALESCE(e.c10_g, 0) +
+                    COALESCE(e.c11_b, 0) + COALESCE(e.c11_g, 0) +
+                    COALESCE(e.c12_b, 0) + COALESCE(e.c12_g, 0)
+                ) AS total_students
+            FROM {SCHEMA}.{TABLE_ENROLLMENT} e
+            GROUP BY e.pseudocode
+        ),
+        teacher_data AS (
+            SELECT
+                pseudocode,
+                MAX(COALESCE(total_tch, 0)) AS total_teachers
+            FROM {SCHEMA}.{TABLE_TEACHER}
+            GROUP BY pseudocode
+        )
+        SELECT
+            UPPER(sp.{COL_DISTRICT_NAME}) as district,
+            COUNT(DISTINCT sp.pseudocode) AS total_schools,
+            COALESCE(SUM(ed.total_students), 0) AS total_students,
+            COALESCE(SUM(td.total_teachers), 0) AS total_teachers,
+            CASE 
+                WHEN SUM(td.total_teachers) > 0 
+                THEN ROUND(SUM(ed.total_students)::numeric / SUM(td.total_teachers), 0)
+                ELSE NULL 
+            END AS ptr,
+            CASE 
+                WHEN COUNT(DISTINCT sp.pseudocode) > 0 
+                THEN ROUND(SUM(ed.total_students)::numeric / COUNT(DISTINCT sp.pseudocode), 2)
+                ELSE NULL 
+            END AS students_per_school
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE} sp
+        LEFT JOIN enrollment_data ed ON sp.pseudocode = ed.pseudocode
+        LEFT JOIN teacher_data td ON sp.pseudocode = td.pseudocode
+        WHERE UPPER(sp.{COL_STATE_NAME}) = %s
+        AND sp.{COL_DISTRICT_NAME} IS NOT NULL
+        GROUP BY UPPER(sp.{COL_DISTRICT_NAME})
+        ORDER BY district
+        """
+        
+        df = pd.read_sql_query(query, conn, params=(state_name.upper(),))
+        conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Error fetching district metrics: {str(e)}")
+        if conn:
+            conn.close()
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_all_states():
+    """Get list of all states"""
+    conn = get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        query = f"""
+        SELECT DISTINCT {COL_STATE_NAME} as state
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+        WHERE {COL_STATE_NAME} IS NOT NULL
+        ORDER BY state
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df['state'].tolist()
+    except Exception as e:
+        st.error(f"Error fetching states: {str(e)}")
+        if conn:
+            conn.close()
+        return []
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_districts_for_state(state_name):
+    """Get list of districts for a state"""
+    conn = get_db_connection()
+    if not conn:
+        return []
+    
+    try:
+        query = f"""
+        SELECT DISTINCT {COL_DISTRICT_NAME} as district
+        FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE}
+        WHERE UPPER({COL_STATE_NAME}) = %s
+        AND {COL_DISTRICT_NAME} IS NOT NULL
+        ORDER BY district
+        """
+        df = pd.read_sql_query(query, conn, params=(state_name.upper(),))
+        conn.close()
+        return df['district'].tolist()
+    except Exception as e:
+        if conn:
+            conn.close()
+        return []
+
+# ============================================================================
+# TAB STRUCTURE
+# ============================================================================
+tabs = st.tabs([
+    "🗺️ Geographic Maps",
+    "🎯 Performance Metrics", 
+    "🔍 Comparative Analysis",
+    "📝 Custom Reports"
+])
+
+# ============================================================================
+# TAB 1: GEOGRAPHIC HEATMAPS
+# ============================================================================
+with tabs[0]:
+    st.markdown("### 🗺️ Geographic Heatmaps")
+    st.markdown("Interactive maps showing PTR, enrollment density by state/district")
+    
+    # Metric selector
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        metric_choice = st.selectbox(
+            "Select Metric to Visualize",
+            ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
+            key="map_metric"
+        )
+    
+    with col2:
+        level = st.radio("Level", ["State", "District"], horizontal=True, key="map_level")
+    
+    # Get data
+    if level == "State":
+        df_map = get_state_metrics()
+        location_col = 'state'
+    else:
+        states = get_all_states()
+        selected_state = st.selectbox("Select State", states, key="map_state_select")
+        df_map = get_district_metrics(selected_state)
+        location_col = 'district'
+    
+    if not df_map.empty:
+        # Map metric to column
+        metric_map = {
+            "PTR (Pupil-Teacher Ratio)": "ptr",
+            "Students per School": "students_per_school",
+            "Total Students": "total_students",
+            "Total Schools": "total_schools"
+        }
+        metric_col = metric_map[metric_choice]
+        
+        # Create simple bar chart with formatted PTR hover
+        df_chart = df_map.sort_values(metric_col, ascending=False).head(20).copy()
+        
+        # Add formatted PTR for hover
+        if metric_col == 'ptr':
+            df_chart['ptr_formatted'] = df_chart['ptr'].apply(lambda x: f"{int(x)}:1" if pd.notna(x) else "N/A")
+            hover_template = '<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>'
+            fig = px.bar(
+                df_chart,
+                x=location_col,
+                y=metric_col,
+                title=f"{metric_choice} by {level} (Top 20)",
+                labels={metric_col: metric_choice, location_col: level},
+                color=metric_col,
+                color_continuous_scale="RdYlGn_r",
+                custom_data=['ptr_formatted']
+            )
+            fig.update_traces(hovertemplate=hover_template)
+        else:
+            fig = px.bar(
+                df_chart,
+                x=location_col,
+                y=metric_col,
+                title=f"{metric_choice} by {level} (Top 20)",
+                labels={metric_col: metric_choice, location_col: level},
+                color=metric_col,
+                color_continuous_scale="Viridis"
+            )
+        
+        fig.update_layout(xaxis_tickangle=-45, showlegend=True, margin=dict(l=60, r=350, t=80, b=120))
+        st.plotly_chart(fig, config={"displayModeBar": False}, use_container_width=True)
+        
+        # Data table - Format PTR as X:1
+        df_display = df_map.copy()
+        if 'ptr' in df_display.columns:
+            df_display['ptr'] = df_display['ptr'].apply(lambda x: f"{int(x)}:1" if pd.notna(x) else "N/A")
+        st.dataframe(df_display.rename(columns=lambda x: x.replace("_", " ").title().replace("Ptr", "PTR")), use_container_width=True)
+    else:
+        st.warning("No data available for selected filters")
+
+# ============================================================================
+# TAB 2: PERFORMANCE METRICS
+# ============================================================================
+with tabs[1]:
+    st.markdown("### 🎯 Performance Metrics Dashboard")
+    
+    # Filters
+    col1, col2 = st.columns(2)
+    with col1:
+        filter_state = st.selectbox("Select State (All for National)", ["All"] + get_all_states(), key="perf_state")
+    with col2:
+        if filter_state != "All":
+            districts = get_districts_for_state(filter_state)
+            filter_district = st.selectbox("Select District (All for State)", ["All"] + districts, key="perf_district")
+        else:
+            filter_district = "All"
+    
+    # Get filtered data
+    if filter_state == "All":
+        df_metrics = get_state_metrics()
+        agg_data = {
+            'total_schools': df_metrics['total_schools'].sum(),
+            'total_students': df_metrics['total_students'].sum(),
+            'total_teachers': df_metrics['total_teachers'].sum()
+        }
+        if agg_data['total_teachers'] > 0:
+            agg_data['ptr'] = round(agg_data['total_students'] / agg_data['total_teachers'])
+        else:
+            agg_data['ptr'] = None
+    elif filter_district == "All":
+        df_metrics = get_district_metrics(filter_state)
+        agg_data = {
+            'total_schools': df_metrics['total_schools'].sum(),
+            'total_students': df_metrics['total_students'].sum(),
+            'total_teachers': df_metrics['total_teachers'].sum()
+        }
+        if agg_data['total_teachers'] > 0:
+            agg_data['ptr'] = round(agg_data['total_students'] / agg_data['total_teachers'])
+        else:
+            agg_data['ptr'] = None
+    else:
+        df_metrics = get_district_metrics(filter_state)
+        df_filtered = df_metrics[df_metrics['district'].str.upper() == filter_district.upper()]
+        if not df_filtered.empty:
+            agg_data = df_filtered.iloc[0].to_dict()
+        else:
+            agg_data = {'total_schools': 0, 'total_students': 0, 'total_teachers': 0, 'ptr': None}
+    
+    # Display KPI cards
+    st.markdown("#### 📊 Key Performance Indicators")
+    kpi_cols = st.columns(4)
+    
+    with kpi_cols[0]:
+        st.metric("Total Schools", f"{agg_data['total_schools']:,}")
+    with kpi_cols[1]:
+        st.metric("Total Students", f"{int(agg_data['total_students']):,}")
+    with kpi_cols[2]:
+        st.metric("Total Teachers", f"{agg_data['total_teachers']:,}")
+    with kpi_cols[3]:
+        ptr_value = f"{int(agg_data['ptr'])}:1" if agg_data['ptr'] else "N/A"
+        ptr_color = "normal" if agg_data['ptr'] and agg_data['ptr'] < 30 else "inverse"
+        st.metric("PTR", ptr_value, delta_color=ptr_color)
+    
+    # Additional metrics
+    col1, col2 = st.columns(2)
+    with col1:
+        if agg_data['total_schools'] > 0:
+            students_per_school = round(agg_data['total_students'] / agg_data['total_schools'], 2)
+            st.metric("Students per School", f"{students_per_school}")
+        else:
+            st.metric("Students per School", "N/A")
+    
+    with col2:
+        if agg_data['total_schools'] > 0:
+            teachers_per_school = round(agg_data['total_teachers'] / agg_data['total_schools'], 2)
+            st.metric("Teachers per School", f"{teachers_per_school}")
+        else:
+            st.metric("Teachers per School", "N/A")
+
+# ============================================================================
+# TAB 3: COMPARATIVE ANALYSIS
+# ============================================================================
+with tabs[2]:
+    st.markdown("### 🔍 Comparative Analysis Tool")
+    st.markdown("Compare two locations side-by-side across all key metrics")
+    
+    comp_level = st.radio("Comparison Level", ["State vs State", "District vs District"], horizontal=True, key="comp_level")
+    
+    col1, col2 = st.columns(2)
+    
+    if comp_level == "State vs State":
+        states = get_all_states()
+        with col1:
+            st.markdown("#### 📍 Location 1")
+            state1 = st.selectbox("State", states, key="comp_state1")
+        with col2:
+            st.markdown("#### 📍 Location 2")
+            state2 = st.selectbox("State", states, key="comp_state2")
+        
+        if st.button("🔄 Compare", type="primary"):
+            df1 = get_state_metrics()
+            df1 = df1[df1['state'].str.upper() == state1.upper()]
+            df2 = get_state_metrics()
+            df2 = df2[df2['state'].str.upper() == state2.upper()]
+            
+            if not df1.empty and not df2.empty:
+                data1 = df1.iloc[0]
+                data2 = df2.iloc[0]
+                
+                # Comparison table
+                comparison = pd.DataFrame({
+                    'Metric': ['Total Schools', 'Total Students', 'Total Teachers', 'PTR', 'Students/School'],
+                    state1: [
+                        f"{data1['total_schools']:,}",
+                        f"{data1['total_students']:,}",
+                        f"{data1['total_teachers']:,}",
+                        f"{int(data1['ptr'])}:1" if data1['ptr'] else "N/A",
+                        f"{data1['students_per_school']}" if 'students_per_school' in data1 else "N/A"
+                    ],
+                    state2: [
+                        f"{data2['total_schools']:,}",
+                        f"{data2['total_students']:,}",
+                        f"{data2['total_teachers']:,}",
+                        f"{int(data2['ptr'])}:1" if data2['ptr'] else "N/A",
+                        f"{data2['students_per_school']}" if 'students_per_school' in data2 else "N/A"
+                    ]
+                })
+                
+                st.dataframe(comparison.rename(columns=lambda x: x.replace("_", " ").title().replace("Ptr", "PTR")), use_container_width=True, hide_index=True)
+                
+                # Export button
+                csv = comparison.to_csv(index=False)
+                st.download_button(
+                    "📥 Download Comparison CSV",
+                    csv,
+                    f"comparison_{state1}_vs_{state2}.csv",
+                    "text/csv"
+                )
+    
+    else:  # District vs District
+        states = get_all_states()
+        with col1:
+            st.markdown("#### 📍 Location 1")
+            state1 = st.selectbox("State", states, key="comp_dist_state1")
+            districts1 = get_districts_for_state(state1)
+            district1 = st.selectbox("District", districts1, key="comp_district1")
+        
+        with col2:
+            st.markdown("#### 📍 Location 2")
+            state2 = st.selectbox("State", states, key="comp_dist_state2")
+            districts2 = get_districts_for_state(state2)
+            district2 = st.selectbox("District", districts2, key="comp_district2")
+        
+        if st.button("🔄 Compare", type="primary", key="comp_dist_btn"):
+            df1 = get_district_metrics(state1)
+            df1 = df1[df1['district'].str.upper() == district1.upper()]
+            df2 = get_district_metrics(state2)
+            df2 = df2[df2['district'].str.upper() == district2.upper()]
+            
+            if not df1.empty and not df2.empty:
+                data1 = df1.iloc[0]
+                data2 = df2.iloc[0]
+                
+                comparison = pd.DataFrame({
+                    'Metric': ['Total Schools', 'Total Students', 'Total Teachers', 'PTR'],
+                    f"{district1} ({state1})": [
+                        f"{data1['total_schools']:,}",
+                        f"{data1['total_students']:,}",
+                        f"{data1['total_teachers']:,}",
+                        f"{int(data1['ptr'])}:1" if data1['ptr'] else "N/A"
+                    ],
+                    f"{district2} ({state2})": [
+                        f"{data2['total_schools']:,}",
+                        f"{data2['total_students']:,}",
+                        f"{data2['total_teachers']:,}",
+                        f"{int(data2['ptr'])}:1" if data2['ptr'] else "N/A"
+                    ]
+                })
+                
+                st.dataframe(comparison.rename(columns=lambda x: x.replace("_", " ").title().replace("Ptr", "PTR")), use_container_width=True, hide_index=True)
+
+# ============================================================================
+# TAB 4: CUSTOM REPORTS
+# ============================================================================
+with tabs[3]:
+    st.markdown("### 📝 Custom Report Builder")
+    st.markdown("Build custom reports with flexible dimensions and metrics")
+    
+    st.markdown("#### Step 1: Select Dimensions")
+    dimensions = st.multiselect(
+        "Choose grouping dimensions",
+        ["State", "District", "Management", "School Type", "Location (Rural/Urban)"],
+        default=["State"],
+        key="report_dims"
+    )
+    
+    st.markdown("#### Step 2: Select Metrics")
+    metrics = st.multiselect(
+        "Choose metrics to include",
+        ["Schools", "Students", "Teachers", "PTR"],
+        default=["Schools", "Students", "PTR"],
+        key="report_metrics"
+    )
+    
+    if st.button("📊 Generate Report", type="primary"):
+        if not dimensions or not metrics:
+            st.warning("Please select at least one dimension and one metric")
+        else:
+            with st.spinner("Generating report..."):
+                # Build query based on selections
+                group_cols = []
+                if "State" in dimensions:
+                    group_cols.append(f"sp.{COL_STATE_NAME}")
+                if "District" in dimensions:
+                    group_cols.append(f"sp.{COL_DISTRICT_NAME}")
+                if "Management" in dimensions:
+                    group_cols.append(f"sp.{COL_MANAGEMENT}")
+                if "School Type" in dimensions:
+                    group_cols.append(f"sp.{COL_SCHOOL_TYPE}")
+                if "Location (Rural/Urban)" in dimensions:
+                    group_cols.append(f"sp.{COL_RURAL_URBAN}")
+                
+                if group_cols:
+                    conn = get_db_connection()
+                    if conn:
+                        try:
+                            group_clause = ", ".join(group_cols)
+                            query = f"""
+                            WITH enrollment_data AS (
+                                SELECT
+                                    e.pseudocode,
+                                    SUM(
+                                        COALESCE(e.cpp_b, 0) + COALESCE(e.cpp_g, 0) +
+                                        COALESCE(e.c1_b, 0) + COALESCE(e.c1_g, 0) +
+                                        COALESCE(e.c2_b, 0) + COALESCE(e.c2_g, 0) +
+                                        COALESCE(e.c3_b, 0) + COALESCE(e.c3_g, 0) +
+                                        COALESCE(e.c4_b, 0) + COALESCE(e.c4_g, 0) +
+                                        COALESCE(e.c5_b, 0) + COALESCE(e.c5_g, 0) +
+                                        COALESCE(e.c6_b, 0) + COALESCE(e.c6_g, 0) +
+                                        COALESCE(e.c7_b, 0) + COALESCE(e.c7_g, 0) +
+                                        COALESCE(e.c8_b, 0) + COALESCE(e.c8_g, 0) +
+                                        COALESCE(e.c9_b, 0) + COALESCE(e.c9_g, 0) +
+                                        COALESCE(e.c10_b, 0) + COALESCE(e.c10_g, 0) +
+                                        COALESCE(e.c11_b, 0) + COALESCE(e.c11_g, 0) +
+                                        COALESCE(e.c12_b, 0) + COALESCE(e.c12_g, 0)
+                                    ) AS total_students
+                                FROM {SCHEMA}.{TABLE_ENROLLMENT} e
+                                GROUP BY e.pseudocode
+                            ),
+                            teacher_data AS (
+                                SELECT
+                                    pseudocode,
+                                    MAX(COALESCE(total_tch, 0)) AS total_teachers
+                                FROM {SCHEMA}.{TABLE_TEACHER}
+                                GROUP BY pseudocode
+                            )
+                            SELECT
+                                {group_clause},
+                                COUNT(DISTINCT sp.pseudocode) AS total_schools,
+                                COALESCE(SUM(ed.total_students), 0) AS total_students,
+                                COALESCE(SUM(td.total_teachers), 0) AS total_teachers,
+                                CASE 
+                                    WHEN SUM(td.total_teachers) > 0 
+                                    THEN ROUND(SUM(ed.total_students)::numeric / SUM(td.total_teachers), 0)
+                                    ELSE NULL 
+                                END AS ptr
+                            FROM {SCHEMA}.{TABLE_SCHOOL_PROFILE} sp
+                            LEFT JOIN enrollment_data ed ON sp.pseudocode = ed.pseudocode
+                            LEFT JOIN teacher_data td ON sp.pseudocode = td.pseudocode
+                            GROUP BY {group_clause}
+                            ORDER BY total_schools DESC
+                            LIMIT 1000
+                            """
+                            
+                            df_report = pd.read_sql_query(query, conn)
+                            conn.close()
+                            
+                            if not df_report.empty:
+                                # Filter columns based on selected metrics
+                                cols_to_show = list(df_report.columns[:len(group_cols)])  # Dimension columns
+                                if "Schools" in metrics:
+                                    cols_to_show.append("total_schools")
+                                if "Students" in metrics:
+                                    cols_to_show.append("total_students")
+                                if "Teachers" in metrics:
+                                    cols_to_show.append("total_teachers")
+                                if "PTR" in metrics:
+                                    cols_to_show.append("ptr")
+                                
+                                df_display = df_report[cols_to_show]
+                                
+                                st.success(f"Report generated successfully! ({len(df_display)} rows)")
+                                st.dataframe(df_display.rename(columns=lambda x: x.replace("_", " ").title().replace("Ptr", "PTR")), use_container_width=True)
+                                
+                                # Export options
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    csv = df_display.to_csv(index=False)
+                                    st.download_button(
+                                        "📥 Download CSV",
+                                        csv,
+                                        "custom_report.csv",
+                                        "text/csv"
+                                    )
+                                
+                                with col2:
+                                    # Excel export
+                                    try:
+                                        buffer = BytesIO()
+                                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                                            df_display.to_excel(writer, index=False, sheet_name='Report')
+                                        buffer.seek(0)
+                                        st.download_button(
+                                            "📊 Download Excel",
+                                            buffer,
+                                            "custom_report.xlsx",
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                        )
+                                    except ImportError:
+                                        st.info("Install openpyxl for Excel export: pip install openpyxl")
+                            else:
+                                st.warning("No data found for selected criteria")
+                        
+                        except Exception as e:
+                            st.error(f"Error generating report: {str(e)}")
+                            conn.close()
+
+# ============================================================================
+# FOOTER
+# ============================================================================
+st.markdown("---")
+st.markdown("""
+    <div style='text-align: center; padding: 20px; margin-top: 40px; border-top: 1px solid #e0e0e0;'>
+    <p style='margin: 0; color: #666; font-size: 0.95rem;'>TutorCloud Global Dashboard</p>
+    <p style='margin: 5px 0 0 0; color: #666; font-size: 0.95rem;'>© 2026 TutorCloud. All rights reserved.</p>
+    </div>
+    """, unsafe_allow_html=True)

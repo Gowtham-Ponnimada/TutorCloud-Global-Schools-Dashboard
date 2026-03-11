@@ -1,0 +1,343 @@
+# =============================================================================
+# APPLICATION CONFIGURATION - TUTORCLOUD GLOBAL DASHBOARD
+# =============================================================================
+# Main application settings and dashboard configuration
+# =============================================================================
+
+# --------------------------------
+# APPLICATION METADATA
+# --------------------------------
+app:
+  name: "TutorCloud Global Education Dashboard"
+  version: "1.0.0"
+  description: "Comprehensive K-12 education analytics platform"
+  author: "TutorCloud Analytics Team"
+  contact: "support@tutorcloud.com"
+  license: "Proprietary"
+
+# --------------------------------
+# REGIONS & ACADEMIC YEARS
+# --------------------------------
+regions:
+  - id: india
+    name: "India"
+    enabled: true
+    default: true
+    schema: india_2024_25
+    timezone: "Asia/Kolkata"
+    currency: INR
+    
+  - id: usa
+    name: "United States"
+    enabled: false
+    schema: usa_2024_25
+    timezone: "America/New_York"
+    currency: USD
+    
+  - id: australia
+    name: "Australia"
+    enabled: false
+    schema: australia_2024_25
+    timezone: "Australia/Sydney"
+    currency: AUD
+    
+  - id: new_zealand
+    name: "New Zealand"
+    enabled: false
+    schema: nz_2024_25
+    timezone: "Pacific/Auckland"
+    currency: NZD
+    
+  - id: uae
+    name: "United Arab Emirates"
+    enabled: false
+    schema: uae_2024_25
+    timezone: "Asia/Dubai"
+    currency: AED
+
+academic_years:
+  - "2024-25"
+  - "2023-24"
+  - "2022-23"
+  default: "2024-25"
+
+# --------------------------------
+# DASHBOARD CONFIGURATION
+# --------------------------------
+dashboard:
+  # Theme & Styling
+  theme:
+    primary_color: "#1f77b4"
+    secondary_color: "#ff7f0e"
+    background_color: "#ffffff"
+    sidebar_color: "#f8f9fa"
+    font_family: "Segoe UI, Roboto, Arial, sans-serif"
+    
+  # Layout
+  layout:
+    sidebar_width: 280
+    navbar_height: 60
+    footer_height: 40
+    content_padding: 20
+    
+  # Update Intervals (milliseconds)
+  update_intervals:
+    metrics: 300000  # 5 minutes
+    charts: 60000    # 1 minute
+    maps: 120000     # 2 minutes
+
+# --------------------------------
+# KPI DEFINITIONS
+# --------------------------------
+kpis:
+  primary:
+    - id: total_schools
+      name: "Total Schools"
+      description: "Total number of K-12 schools"
+      format: "{:,}"
+      icon: "school"
+      color: "#1f77b4"
+      
+    - id: total_students
+      name: "Total Students"
+      description: "Total student enrollment"
+      format: "{:,}"
+      icon: "people"
+      color: "#2ca02c"
+      
+    - id: total_teachers
+      name: "Total Teachers"
+      description: "Total number of teachers"
+      format: "{:,}"
+      icon: "person"
+      color: "#d62728"
+      
+    - id: pupil_teacher_ratio
+      name: "Pupil-Teacher Ratio"
+      description: "Students per teacher"
+      format: "{:.1f}:1"
+      icon: "trending_up"
+      color: "#9467bd"
+      
+  secondary:
+    - id: girls_percentage
+      name: "Girls %"
+      description: "Percentage of girl students"
+      format: "{:.1f}%"
+      icon: "female"
+      
+    - id: electricity_coverage
+      name: "Electricity %"
+      description: "Schools with electricity"
+      format: "{:.1f}%"
+      icon: "electrical_services"
+      
+    - id: trained_teachers
+      name: "Trained Teachers %"
+      description: "Professionally trained teachers"
+      format: "{:.1f}%"
+      icon: "workspace_premium"
+
+# --------------------------------
+# GRADE LEVEL MAPPINGS
+# --------------------------------
+grade_levels:
+  pre_primary:
+    name: "Pre-Primary"
+    grades: ["LKG", "UKG", "Anganwadi"]
+    item_groups: [1]
+    item_ids: [2]
+    colors: ["#FFE5B4", "#FFDAB9"]
+    
+  primary:
+    name: "Primary (1-5)"
+    grades: ["Class 1", "Class 2", "Class 3", "Class 4", "Class 5"]
+    item_groups: [1]
+    item_ids: [3]
+    colors: ["#90EE90", "#98FB98", "#00FA9A", "#00FF7F", "#7CFC00"]
+    
+  upper_primary:
+    name: "Upper Primary (6-8)"
+    grades: ["Class 6", "Class 7", "Class 8"]
+    item_groups: [4]
+    item_ids: [1, 2, 3]
+    colors: ["#87CEEB", "#6495ED", "#4682B4"]
+    
+  secondary:
+    name: "Secondary (9-10)"
+    grades: ["Class 9", "Class 10"]
+    item_groups: [4]
+    item_ids: [4, 5]
+    colors: ["#FFB6C1", "#FF69B4"]
+    
+  higher_secondary:
+    name: "Higher Secondary (11-12)"
+    grades: ["Class 11", "Class 12"]
+    item_groups: [4]
+    item_ids: [6, 7, 8]  # Science, Commerce, Arts
+    colors: ["#DDA0DD", "#9370DB"]
+
+# --------------------------------
+# FILTER CONFIGURATIONS
+# --------------------------------
+filters:
+  global:
+    - id: region
+      name: "Region"
+      type: "dropdown"
+      multi: false
+      searchable: true
+      clearable: false
+      
+    - id: academic_year
+      name: "Academic Year"
+      type: "dropdown"
+      multi: false
+      clearable: false
+      
+  geographic:
+    - id: state
+      name: "State/Province"
+      type: "dropdown"
+      multi: true
+      searchable: true
+      clearable: true
+      max_selections: 3
+      
+    - id: district
+      name: "District"
+      type: "dropdown"
+      multi: true
+      searchable: true
+      clearable: true
+      depends_on: ["state"]
+      
+    - id: block
+      name: "Block/Taluk"
+      type: "dropdown"
+      multi: true
+      searchable: true
+      clearable: true
+      depends_on: ["district"]
+      enabled: false  # Enable when block-level data available
+      
+  categorical:
+    - id: rural_urban
+      name: "Area Type"
+      type: "checklist"
+      options:
+        - {label: "Rural", value: 1}
+        - {label: "Urban", value: 2}
+        
+    - id: school_management
+      name: "Management"
+      type: "dropdown"
+      multi: true
+      searchable: true
+      
+    - id: school_category
+      name: "School Category"
+      type: "dropdown"
+      multi: true
+      searchable: true
+
+# --------------------------------
+# VISUALIZATION SETTINGS
+# --------------------------------
+visualizations:
+  maps:
+    enabled: true
+    default_view:
+      center: [20.5937, 78.9629]  # India center
+      zoom: 4
+    style: "carto-positron"
+    color_scale: "Viridis"
+    
+  charts:
+    default_height: 400
+    color_palette:
+      - "#1f77b4"
+      - "#ff7f0e"
+      - "#2ca02c"
+      - "#d62728"
+      - "#9467bd"
+      - "#8c564b"
+      - "#e377c2"
+      - "#7f7f7f"
+      - "#bcbd22"
+      - "#17becf"
+    
+  tables:
+    page_size: 50
+    max_page_size: 1000
+    export_formats: ["csv", "xlsx"]
+    max_export_rows: 100000
+
+# --------------------------------
+# FEATURE FLAGS
+# --------------------------------
+features:
+  comparison_view: true
+  advanced_filters: true
+  school_search: true
+  export_functionality: true
+  map_visualization: true
+  real_time_updates: false  # For future
+  user_authentication: false  # For future
+  multi_language: false  # For future
+  
+# --------------------------------
+# PERFORMANCE SETTINGS
+# --------------------------------
+performance:
+  caching:
+    enabled: true
+    default_timeout: 300  # 5 minutes
+    mv_timeout: 3600  # 1 hour
+    
+  pagination:
+    default_size: 50
+    max_size: 1000
+    
+  query_limits:
+    max_rows: 100000
+    timeout: 30  # seconds
+    
+  lazy_loading:
+    enabled: true
+    threshold: 1000  # rows
+
+# --------------------------------
+# EXPORT SETTINGS
+# --------------------------------
+export:
+  formats:
+    - csv
+    - xlsx
+    
+  limits:
+    max_rows: 100000
+    timeout: 60  # seconds
+    
+  filename_pattern: "tutorcloud_{type}_{date}.{ext}"
+  
+  excel:
+    freeze_panes: true
+    auto_filter: true
+    column_width: "auto"
+
+# --------------------------------
+# LOGGING CONFIGURATION
+# --------------------------------
+logging:
+  level: "INFO"
+  format: "json"
+  file: "logs/tutorcloud.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+  
+  levels:
+    root: "INFO"
+    dashboard: "INFO"
+    database: "WARNING"
+    cache: "WARNING"

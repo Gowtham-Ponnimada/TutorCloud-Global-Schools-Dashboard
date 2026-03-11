@@ -1,0 +1,119 @@
+regions:
+- id: india
+  name: India
+  enabled: true
+  display:
+    academic_year: 2024-25
+    currency: INR
+    language: en
+    timezone: Asia/Kolkata
+  database:
+    schema: india_2024_25
+    tables:
+      schools: school_profile_1
+      enrollment_1: enrollment_detail_1
+      enrollment_2: enrollment_detail_2
+      teachers: teacher_data
+    materialized_views:
+      national: mv_kpi_all_india
+      state: mv_kpi_state
+      district: mv_kpi_district
+  filters:
+    management_types:
+    - code: 1
+      label: Department of Education
+    - code: 2
+      label: Tribal Welfare
+    - code: 3
+      label: Local Body
+    - code: 4
+      label: Private Aided
+    - code: 5
+      label: Private Unaided
+    - code: 6
+      label: Others
+    - code: 7
+      label: Central Govt
+    - code: 8
+      label: Unrecognized
+    board_types:
+    - code: 1
+      label: State Board
+    - code: 2
+      label: CBSE
+    - code: 3
+      label: ICSE
+    - code: 4
+      label: International
+    - code: 5
+      label: Madrasa
+    - code: 6
+      label: Sanskrit
+    - code: 7
+      label: Other
+    - code: 8
+      label: Multiple
+  grades:
+    pre_primary:
+    - cpp
+    primary:
+    - c1
+    - c2
+    - c3
+    - c4
+    - c5
+    middle:
+    - c6
+    - c7
+    - c8
+    secondary:
+    - c9
+    - c10
+    higher_secondary:
+    - c11
+    - c12
+- id: usa
+  name: United States
+  enabled: false
+  display:
+    academic_year: 2024-25
+    currency: USD
+    language: en
+    timezone: America/New_York
+  database:
+    schema: usa_2024_25
+    tables:
+      schools: school_profile
+      enrollment_1: enrollment_detail
+      enrollment_2: enrollment_detail_secondary
+      teachers: teacher_data
+    materialized_views:
+      national: mv_kpi_national
+      state: mv_kpi_state
+      district: mv_kpi_district
+- id: uae
+  name: United Arab Emirates
+  enabled: true
+  display:
+    academic_year: 2024-25
+    currency: AED
+    language: en
+    timezone: Asia/Dubai
+  database:
+    schema: uae
+    tables:
+      schools: uae_fact_schools
+      enrollment: uae_fact_enrollment
+      teachers: uae_fact_teachers_emirate
+      pass_fail: uae_fact_pass_fail
+      scores: uae_fact_student_scores
+      nationalities: uae_fact_student_nationalities
+    materialized_views:
+      kpi_summary: mv_uae_kpi_summary
+      by_emirate: mv_uae_enrollment_by_emirate
+      teachers_emirate: mv_uae_teachers_by_emirate
+      student_teacher: mv_uae_student_teacher_ratio
+      pass_rates: mv_uae_pass_rates
+      curriculum: mv_uae_schools_curriculum
+      by_subject: mv_uae_teachers_by_subject
+      nationality: mv_uae_nationality_diversity
