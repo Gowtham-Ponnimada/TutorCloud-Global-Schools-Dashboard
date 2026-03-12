@@ -328,8 +328,8 @@ def render_uae_home():
     )
     st.markdown("---")
 
-    # ── Sidebar filters ────────────────────────────────────────────────────────
-    filters = _build_sidebar_filters()
+    # No sidebar filters on Home page (matches India Home)
+    filters = {}  # empty – no sidebar filtering on Home
 
     # ── Gather column names ────────────────────────────────────────────────────
     enr_cols    = _tbl_cols("uae_fact_enrollment")
@@ -557,7 +557,7 @@ enrollment — a key indicator of education equity.
     nav1, nav2 = st.columns(2)
     with nav1:
         st.markdown("""
-<a href="/State_Dashboard" target="_blank" style="
+<a href="/State_Dashboard?region=UAE" target="_blank" style="
     display:inline-block; width:100%; padding:1rem;
     background:linear-gradient(135deg,#006400 0%,#008000 100%);
     color:white!important; text-align:center; text-decoration:none!important;
@@ -579,7 +579,7 @@ Drill into emirate-level data with advanced filtering.
 """, unsafe_allow_html=True)
     with nav2:
         st.markdown("""
-<a href="/Analytics" target="_blank" style="
+<a href="/Analytics?region=UAE" target="_blank" style="
     display:inline-block; width:100%; padding:1rem;
     background:linear-gradient(135deg,#C8102E 0%,#990000 100%);
     color:white!important; text-align:center; text-decoration:none!important;
@@ -1253,7 +1253,8 @@ def render_uae_analytics():
         unsafe_allow_html=True
     )
 
-    filters = _build_sidebar_filters()
+    # No sidebar filters on Analytics page (matches India Analytics)
+    filters = {}  # empty – filters are inline per tab, not sidebar
 
     tabs = st.tabs([
         "🗺️ Geographic Analysis",

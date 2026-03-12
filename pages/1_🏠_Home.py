@@ -686,7 +686,7 @@ if summary:
     with nav_col1:
         # State Dashboard link - opens in new tab
         st.markdown("""
-        <a href="/State_Dashboard" target="_blank" style="
+        <a href="/State_Dashboard?region=India" target="_blank" style="
             display: inline-block;
             width: 100%;
             padding: 1rem;
@@ -719,7 +719,7 @@ if summary:
     with nav_col2:
         # Analytics link - opens in new tab
         st.markdown("""
-        <a href="/Analytics" target="_blank" style="
+        <a href="/Analytics?region=India" target="_blank" style="
             display: inline-block;
             width: 100%;
             padding: 1rem;
