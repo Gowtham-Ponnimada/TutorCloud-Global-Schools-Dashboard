@@ -419,7 +419,7 @@ def render_uae_home():
     with col5:
         st.metric("PTR (NATIONAL)", ptr_str, help="Pupil-Teacher Ratio (2024-25)")
     with col6:
-        st.metric("STUDENTS / SCHOOL", sps_str, help="Average students per school (2024-25)")
+        st.metric("STUDENTS/SCHOOL", sps_str, help="Average students per school (2024-25)")
 
     st.markdown("---")
 
@@ -442,7 +442,7 @@ def render_uae_home():
                 text="students",
                 labels={"emirate": "Emirate", "students": "Students"},
             )
-            fig.update_traces(texttemplate="%{text:,}", textposition="outside",
+            fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
                               marker_line_color="white", marker_line_width=1.5)
             fig.update_layout(
                 height=480, plot_bgcolor="white", paper_bgcolor="white",
@@ -479,7 +479,7 @@ def render_uae_home():
                     text="schools",
                     labels={"emirate": "Emirate", "schools": "Schools"},
                 )
-                fig2.update_traces(texttemplate="%{text:,}", textposition="outside",
+                fig2.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
                                    marker_line_color="white", marker_line_width=1.5)
                 fig2.update_layout(
                     height=480, plot_bgcolor="white", paper_bgcolor="white",
@@ -527,7 +527,7 @@ def render_uae_home():
     ins1, ins2, ins3 = st.columns(3)
     with ins1:
         st.info(f"""
-**🏫 School Coverage**
+**📚 School Coverage**
 
 UAE has **{_fmt(total_sch)}** schools serving
 **{_fmt(total_enr)}** students across
@@ -542,12 +542,12 @@ the national PTR stands at **{ptr_str}**,
 reflecting the student-to-teacher ratio.
         """)
     with ins3:
-        st.warning(f"""
-**📊 Gender Parity**
+        st.info(f"""
+**🏫 School Size**
 
-Female students represent
-**{f"{pct_female}%" if pct_female else "N/A"}** of total
-enrollment — a key indicator of education equity.
+On average, each UAE school serves
+**{sps_str}** students —
+reflecting the scale of UAE's education institutions.
         """)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1257,10 +1257,10 @@ def render_uae_analytics():
     filters = {}  # empty – filters are inline per tab, not sidebar
 
     tabs = st.tabs([
-        "🗺️ Geographic Analysis",
-        "🎯 Performance Analytics",
+        "🗺️ Geographic Maps",
+        "🎯 Performance Metrics",
         "🔍 Comparative Analysis",
-        "📝 Custom Report",
+        "📝 Custom Reports",
     ])
 
     with tabs[0]:
@@ -1296,7 +1296,7 @@ def _uae_analytics_geo(filters):
     # Metric selector (same as India)
     metric_choice = st.selectbox(
         "📊 Select Metric to Visualize",
-        ["Total Students", "Total Schools", "Total Teachers", "Pupil-Teacher Ratio (PTR)"],
+        ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
         key="uae_geo_metric"
     )
 
@@ -1327,7 +1327,29 @@ def _uae_analytics_geo(filters):
         )
         y_label = "Total Teachers"
 
-    elif metric_choice == "Pupil-Teacher Ratio (PTR)":
+    elif metric_choice == "Students per School" and emirate_col and enr_cnt_col and sch_em_col and sch_cnt_col:
+        df_e2 = _q(
+            f"SELECT {emirate_col} AS emirate, SUM({enr_cnt_col}) AS total_enr "
+            f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr} "
+            f"GROUP BY {emirate_col}",
+            [UAE_YEAR] + params_enr
+        )
+        df_s2 = _q(
+            f"SELECT {sch_em_col} AS emirate, SUM({sch_cnt_col}) AS total_sch "
+            f"FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch} "
+            f"GROUP BY {sch_em_col}",
+            [UAE_YEAR] + params_sch
+        )
+        if not df_e2.empty and not df_s2.empty:
+            df = df_e2.merge(df_s2, on="emirate")
+            df["value"] = (df["total_enr"] / df["total_sch"]).apply(
+                lambda x: int(round(x)) if pd.notna(x) and x > 0 else 0)
+            df = df[["emirate", "value"]].sort_values("value", ascending=False)
+        else:
+            df = pd.DataFrame()
+        y_label = "Students per School"
+
+    elif metric_choice == "PTR (Pupil-Teacher Ratio)":
         df_t = _q(f"SELECT {_pick_col(tch_cols,'region_en','emirate','emirate_en','region')} AS emirate, "
                   f"SUM({tch_cnt_col}) AS teachers "
                   f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s GROUP BY 1", [UAE_YEAR])
@@ -1346,7 +1368,7 @@ def _uae_analytics_geo(filters):
         y_label = metric_choice
 
     if not df.empty if isinstance(df, pd.DataFrame) else False:
-        color_scale = "RdYlGn_r" if "PTR" in metric_choice else "Greens"
+        color_scale = "RdYlGn_r" if "PTR" in metric_choice else "Viridis"
         fig = px.bar(
             df, x="emirate", y="value",
             color="value", color_continuous_scale=color_scale,
@@ -1354,7 +1376,7 @@ def _uae_analytics_geo(filters):
             labels={"emirate": "Emirate", "value": y_label}
         )
         fig.update_traces(
-            texttemplate="%{text:,.1f}" if "PTR" in metric_choice else "%{text:,}",
+            texttemplate="%{text:d}" if "PTR" in metric_choice else "%{text:,.0f}",
             textposition="outside"
         )
         fig.update_layout(
@@ -1442,7 +1464,8 @@ def _uae_analytics_perf(filters):
     with k3: st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
 
     k4, k5, k6 = st.columns(3)
-    with k4: st.metric("📐 PTR",                   f"{ptr}:1" if ptr else "N/A")
+    ptr_color = "normal" if ptr and ptr < 30 else "inverse"
+    with k4: st.metric("📐 PTR", f"{ptr}:1" if ptr else "N/A", delta_color=ptr_color)
     with k5: st.metric("📚 Students/School",        _fmt(sps) if sps else "N/A")
     with k6: st.metric("🏫 Teachers/School",        f"{tps:.2f}" if tps else "N/A")
 
@@ -1543,8 +1566,8 @@ def _uae_analytics_compare(filters):
             avg_sc = round(float(df.iloc[0, 0]), 1) if not df.empty and df.iloc[0, 0] else 0
         ptr = int(round(enr / tch)) if tch > 0 else None
         sps = int(round(enr / sch)) if sch > 0 else None
-        return {"Students": enr, "Schools": sch, "Teachers": tch,
-                "PTR": ptr, "Students/School": sps, "Avg Score": avg_sc}
+        return {"Total Students": enr, "Total Schools": sch, "Total Teachers": tch,
+                "PTR": ptr, "Students/School": sps}
 
     m_a = _get_metrics(sel_a)
     m_b = _get_metrics(sel_b)
@@ -1561,11 +1584,8 @@ def _uae_analytics_compare(filters):
             if k == "PTR":
                 try: return f"{int(round(float(v)))}:1"
                 except: return "N/A"
-            if k in ("Students/School",):
+            if k == "Students/School":
                 try: return _fmt(int(round(float(v))))
-                except: return "N/A"
-            if k == "Avg Score":
-                try: return f"{float(v):.2f}"
                 except: return "N/A"
             if isinstance(v, (int, float)):
                 return _fmt(int(v))
@@ -1579,7 +1599,7 @@ def _uae_analytics_compare(filters):
 
     # Bar chart comparison (numeric metrics only)
     numeric_keys = [k for k in m_a if isinstance(m_a[k], (int, float)) and m_a[k] is not None
-                    and k not in ("PTR", "Students/School", "Avg Score")]
+                    and k not in ("PTR", "Students/School")]
     if numeric_keys:
         st.markdown('<div class="uae-section-header">📊 Side-by-Side Comparison</div>', unsafe_allow_html=True)
         df_bar = pd.DataFrame({
@@ -1627,6 +1647,7 @@ def _uae_analytics_custom(filters):
     if enr_cnt_col: metric_options["Total Students"] = ("uae_fact_enrollment", enr_cnt_col)
     if sch_cnt_col: metric_options["Total Schools"] = ("uae_fact_schools", sch_cnt_col)
     if tch_cnt_col: metric_options["Total Teachers"] = ("uae_fact_teachers_emirate", tch_cnt_col)
+    if enr_cnt_col and tch_cnt_col: metric_options["PTR"] = ("computed", None)  # derived metric
 
     c1, c2 = st.columns(2)
     with c1:
@@ -1663,7 +1684,11 @@ def _uae_analytics_custom(filters):
     where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
 
     select_parts = dim_cols.copy()
-    if "Total Students" in sel_metrics and enr_cnt_col:
+    need_students = ("Total Students" in sel_metrics or "PTR" in sel_metrics) and enr_cnt_col
+    need_teachers = ("Total Teachers" in sel_metrics or "PTR" in sel_metrics) and tch_cnt_col
+    need_schools  = "Total Schools" in sel_metrics and sch_cnt_col
+
+    if need_students:
         select_parts.append(f"SUM({enr_cnt_col}) AS total_students")
 
     query = (
@@ -1679,6 +1704,48 @@ def _uae_analytics_custom(filters):
         st.warning("No data found for selected filters.")
         return
 
+    # Merge Schools data if needed
+    sch_em_col2 = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
+    if need_schools and sch_em_col2:
+        where_sch2, params_sch2 = _where_clause(filters, allowed_cols=sch_cols)
+        df_smerge = _q(
+            f"SELECT {sch_em_col2} AS __dim__, SUM({sch_cnt_col}) AS total_schools "
+            f"FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch2} "
+            f"GROUP BY {sch_em_col2}",
+            [UAE_YEAR] + params_sch2
+        )
+        if not df_smerge.empty:
+            df_smerge = df_smerge.rename(columns={"__dim__": group_cols[0]})
+            df = df.merge(df_smerge, on=group_cols[0], how="left")
+
+    # Merge Teachers data if needed (Total Teachers or PTR)
+    tch_em_col2 = _pick_col(tch_cols, "region_en", "emirate", "emirate_en", "region")
+    if need_teachers and tch_em_col2:
+        where_tch2, params_tch2 = _where_clause(filters, allowed_cols=tch_cols)
+        df_tmerge = _q(
+            f"SELECT {tch_em_col2} AS __dim__, SUM({tch_cnt_col}) AS total_teachers "
+            f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch2} "
+            f"GROUP BY {tch_em_col2}",
+            [UAE_YEAR] + params_tch2
+        )
+        if not df_tmerge.empty:
+            df_tmerge = df_tmerge.rename(columns={"__dim__": group_cols[0]})
+            df = df.merge(df_tmerge, on=group_cols[0], how="left")
+
+    # Compute PTR if requested
+    if "PTR" in sel_metrics and "total_students" in df.columns and "total_teachers" in df.columns:
+        df["ptr"] = df.apply(
+            lambda r: int(round(r["total_students"] / r["total_teachers"]))
+            if pd.notna(r.get("total_teachers")) and r.get("total_teachers", 0) > 0
+            else None, axis=1
+        )
+
+    # Drop helper columns not selected
+    if "total_students" in df.columns and "Total Students" not in sel_metrics:
+        df = df.drop(columns=["total_students"], errors="ignore")
+    if "total_teachers" in df.columns and "Total Teachers" not in sel_metrics:
+        df = df.drop(columns=["total_teachers"], errors="ignore")
+
     # Rename columns for display
     col_renames = {}
     for d in sel_dims:
@@ -1686,7 +1753,15 @@ def _uae_analytics_custom(filters):
         alias = d.lower().replace(" ", "_")
         col_renames[alias] = d
         col_renames[col]   = d
+    col_renames.update({"total_students": "Total Students",
+                        "total_schools":  "Total Schools",
+                        "total_teachers": "Total Teachers",
+                        "ptr":            "PTR"})
     df = df.rename(columns=col_renames)
+
+    # Format PTR column if present
+    if "PTR" in df.columns:
+        df["PTR"] = df["PTR"].apply(lambda v: f"{int(v)}:1" if pd.notna(v) else "N/A")
 
     st.markdown(f"**{len(df)} rows** returned")
     st.dataframe(df, use_container_width=True)
