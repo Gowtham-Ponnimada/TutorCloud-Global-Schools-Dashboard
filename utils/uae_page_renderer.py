@@ -250,12 +250,6 @@ def _build_sidebar_filters() -> dict:
         cycle_col      = _pick_col(pf_cols,  "cycle", "education_cycle", "grade_level")
         curriculum_col = _pick_col(sch_cols, "curriculum_en", "curriculum", "curriculum_type")
 
-        st.sidebar.markdown("---")
-        st.sidebar.markdown(
-            '<span class="uae-sidebar-badge">🇦🇪 UAE Filters</span>',
-            unsafe_allow_html=True
-        )
-        st.sidebar.caption(f"Academic Year: **{UAE_YEAR}** (fixed)")
 
         def _sel(label, opts, key):
             all_opts = ["All"] + [str(x) for x in opts if x]
@@ -274,12 +268,33 @@ def _build_sidebar_filters() -> dict:
         if nat_col:
             opts = _distinct("uae_fact_enrollment", nat_col)
             filters["nationality"] = {"col": nat_col, "val": _sel("🌍 Nationality Category", opts, "uae_nat")}
-        if cycle_col:
-            opts = _distinct("uae_fact_pass_fail", cycle_col)
-            filters["cycle"] = {"col": cycle_col, "val": _sel("🎓 Education Cycle", opts, "uae_cycle")}
         if curriculum_col:
             opts = _distinct("uae_fact_schools", curriculum_col)
             filters["curriculum"] = {"col": curriculum_col, "val": _sel("📖 Curriculum", opts, "uae_curr")}
+
+        # Curriculum cross-filter: look up which emirates have the
+        # selected curriculum, then add an IN-list so enrollment/
+        # teacher queries also scope to only those emirates.
+        if "curriculum" in filters and filters["curriculum"]["val"] != "All":
+            try:
+                _cv  = filters["curriculum"]["val"]
+                _cc  = filters["curriculum"]["col"]
+                _emc = _pick_col(_tbl_cols("uae_fact_schools"),
+                                  "region_en", "emirate", "emirate_en", "region")
+                if _emc:
+                    _df_ce = _q(
+                        f"SELECT DISTINCT {_emc} FROM uae.uae_fact_schools "
+                        f"WHERE academic_year=%s AND {_cc}=%s",
+                        [UAE_YEAR, _cv]
+                    )
+                    if not _df_ce.empty:
+                        _ems = [str(e) for e in _df_ce.iloc[:, 0].tolist() if e]
+                        if _ems:
+                            filters["_curriculum_emirate"] = {
+                                "col": _emc, "val": _ems, "op": "in"
+                            }
+            except Exception:
+                pass  # non-fatal: cross-filter best-effort
 
         # Show active filters in sidebar
         active = [v["val"] for v in filters.values() if v["val"] != "All"]
@@ -296,15 +311,39 @@ def _build_sidebar_filters() -> dict:
 
 
 def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = None) -> tuple:
+    """Build SQL WHERE additions from the filters dict.
+    Supports op='in' for list-based IN clauses (curriculum cross-filter).
+    For cross-table filtering, tries exact column match then root-word match."""
     parts, params = [], []
     prefix = f"{table_alias}." if table_alias else ""
     for _, finfo in filters.items():
         col = finfo["col"]
         val = finfo["val"]
+        # ── IN-list operator (curriculum cross-filter) ───────────────────
+        if finfo.get("op") == "in":
+            if allowed_cols is not None and col not in allowed_cols:
+                continue
+            if isinstance(val, list) and val:
+                placeholders = ",".join(["%s"] * len(val))
+                parts.append(f"{prefix}{col} IN ({placeholders})")
+                params.extend(val)
+            continue
+        # ── Standard equality filter ─────────────────────────────────────
         if val == "All":
             continue
-        if allowed_cols is not None and col not in allowed_cols:
-            continue
+        if allowed_cols is not None:
+            if col not in allowed_cols:
+                # Fuzzy root-word match (region_en ↔ region_en across tables)
+                root_words = set(col.replace("_en", "").replace("_cat", "").split("_"))
+                alt_col = next(
+                    (c for c in (allowed_cols or [])
+                     if any(w in c for w in root_words) and len(w) > 2),
+                    None
+                )
+                if alt_col:
+                    col = alt_col
+                else:
+                    continue
         parts.append(f"{prefix}{col} = %s")
         params.append(val)
     clause = (" AND " + " AND ".join(parts)) if parts else ""
@@ -454,8 +493,6 @@ def render_uae_home():
                 coloraxis_showscale=False
             )
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            _export_buttons(df.rename(columns={"emirate": "Emirate", "students": "Students"}),
-                            "home_emirate_enrollment")
 
     # ─────────────────────────────────────────────────────────────────────────
     # CHART 2: Schools by Emirate  (= India's "Top 20 States by Student Enrollment")
@@ -491,8 +528,6 @@ def render_uae_home():
                     coloraxis_showscale=False
                 )
                 st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-                _export_buttons(df_sch.rename(columns={"emirate": "Emirate", "schools": "Schools"}),
-                                "home_emirate_schools")
 
     # ─────────────────────────────────────────────────────────────────────────
     # CHART 3: Gender distribution donut
@@ -604,7 +639,7 @@ Interactive analytics with geographic maps and custom reports.
     st.markdown("---")
     st.markdown(
         "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
-        "<strong>TutorCloud Global Dashboard</strong> — UAE Education Data 2024-25 | "
+        "<strong>TutorCloud Global Dashboard</strong><br>"
         "© 2026 TutorCloud. All rights reserved.</div>",
         unsafe_allow_html=True
     )
@@ -717,6 +752,15 @@ def render_uae_state_dashboard():
     with tabs[4]:
         _uae_tab_demographics(filters)
 
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
+        "<strong>TutorCloud Global Dashboard</strong><br>"
+        "© 2026 TutorCloud. All rights reserved.</div>",
+        unsafe_allow_html=True
+    )
+
 
 # ── Tab 1: Overview ────────────────────────────────────────────────────────────
 
@@ -750,7 +794,6 @@ def _uae_tab_overview(filters):
                               xaxis=dict(tickangle=-45),
                               margin=dict(l=60, r=220, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "overview_emirate_enr")
 
     # Education-type stacked bar
     if edu_col and enr_cnt_col and emirate_col:
@@ -768,7 +811,6 @@ def _uae_tab_overview(filters):
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=380,
                               margin=dict(t=30, b=80))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "overview_edu_type")
 
     # Gender grouped bar by emirate
     if gender_col and enr_cnt_col and emirate_col:
@@ -786,7 +828,6 @@ def _uae_tab_overview(filters):
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=360,
                               margin=dict(t=30, b=80))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "overview_gender_emirate")
 
     # Nationality pie
     if nat_col and enr_cnt_col:
@@ -807,7 +848,6 @@ def _uae_tab_overview(filters):
                   .assign(Share=(df["students"] / df["students"].sum() * 100).round(1).astype(str) + "%"),
                 use_container_width=True
             )
-            _export_buttons(df, "overview_nationality")
 
 
 # ── Tab 2: Schools ─────────────────────────────────────────────────────────────
@@ -841,7 +881,6 @@ def _uae_tab_schools(filters):
                               xaxis=dict(tickangle=-45),
                               margin=dict(l=60, r=220, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "schools_emirate")
 
     # Schools by curriculum
     if curr_col and sch_cnt_col:
@@ -861,7 +900,6 @@ def _uae_tab_schools(filters):
                               showlegend=False, coloraxis_showscale=False,
                               margin=dict(l=180, t=30))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "schools_curriculum")
 
     # Schools by gender (pie)
     if gender_col and sch_cnt_col:
@@ -896,7 +934,6 @@ def _uae_tab_schools(filters):
                             title="Schools per Curriculum per Emirate")
             fig.update_layout(height=max(300, len(pivot) * 30))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "schools_heatmap")
 
 
 # ── Tab 3: Teachers ────────────────────────────────────────────────────────────
@@ -929,7 +966,6 @@ def _uae_tab_teachers(filters):
                               xaxis=dict(tickangle=-45),
                               margin=dict(l=60, r=220, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "teachers_emirate")
 
     # PTR by emirate
     enr_cols    = _tbl_cols("uae_fact_enrollment")
@@ -956,7 +992,6 @@ def _uae_tab_teachers(filters):
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=340,
                               margin=dict(l=120, t=30))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df_ptr[["emirate", "students", "teachers", "PTR"]], "ptr_emirate")
 
     # Teacher gender split
     if gender_col and tch_cnt_col:
@@ -992,7 +1027,6 @@ def _uae_tab_teachers(filters):
                               showlegend=False, coloraxis_showscale=False,
                               margin=dict(l=160, t=30))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "teachers_nationality")
 
 
 # ── Tab 4: Performance ─────────────────────────────────────────────────────────
@@ -1043,7 +1077,6 @@ def _uae_tab_performance(filters):
                               xaxis=dict(tickangle=-45),
                               margin=dict(l=60, r=220, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "pass_fail_emirate")
 
     # Pass/Fail by cycle
     if cycle_col and (pass_col or pass_pct):
@@ -1070,7 +1103,6 @@ def _uae_tab_performance(filters):
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=340,
                               margin=dict(t=30, b=60))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "pass_fail_cycle")
 
     # Pass rate heatmap (cycle × emirate)
     if emirate_col and cycle_col and (pass_pct or pass_col):
@@ -1117,7 +1149,6 @@ def _uae_tab_performance(filters):
                               showlegend=False, coloraxis_showscale=False,
                               margin=dict(l=160, t=30))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "avg_scores_subject")
 
     # Average scores by emirate
     if em_sc_col and avg_col:
@@ -1140,7 +1171,6 @@ def _uae_tab_performance(filters):
                               xaxis=dict(tickangle=-45),
                               margin=dict(l=60, r=220, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "avg_scores_emirate")
 
 
 # ── Tab 5: Demographics ────────────────────────────────────────────────────────
@@ -1179,7 +1209,6 @@ def _uae_tab_demographics(filters):
                               showlegend=False, coloraxis_showscale=False,
                               margin=dict(l=160, t=30))
             st.plotly_chart(fig, use_container_width=True)
-            _export_buttons(df, "top_nationalities")
 
     # Nationality treemap
     if nat_col and cnt_col:
@@ -1236,7 +1265,6 @@ def _uae_tab_demographics(filters):
                   .assign(Share=(df["students"] / df["students"].sum() * 100).round(1).astype(str) + "%"),
                 use_container_width=True
             )
-            _export_buttons(df, "demographics_nat_cat")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1251,10 +1279,6 @@ def render_uae_analytics():
     st.markdown('<div class="main-header">📈 UAE Analytics</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="sub-header">Interactive Analytics — Academic Year 2024–2025</div>',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        '<div class="uae-flag-banner">🇦🇪 UAE Analytics — Academic Year 2024–2025</div>',
         unsafe_allow_html=True
     )
 
@@ -1276,6 +1300,15 @@ def render_uae_analytics():
         _uae_analytics_compare(filters)
     with tabs[3]:
         _uae_analytics_custom(filters)
+
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
+        "<strong>TutorCloud Global Dashboard</strong><br>"
+        "© 2026 TutorCloud. All rights reserved.</div>",
+        unsafe_allow_html=True
+    )
 
 
 # ── Analytics Tab 1: Geographic Analysis (mirrors India "Geographic Maps") ─────
@@ -1399,7 +1432,6 @@ def _uae_analytics_geo(filters):
             df.rename(columns={"emirate": "Emirate", "value": y_label}),
             use_container_width=True
         )
-        _export_buttons(df.rename(columns={"emirate": "Emirate", "value": y_label}), "geo_analysis")
 
 
 # ── Analytics Tab 2: Performance Analytics (mirrors India "Performance Metrics") ─
@@ -1600,7 +1632,6 @@ def _uae_analytics_compare(filters):
     if rows:
         df_cmp = pd.DataFrame(rows)
         st.dataframe(df_cmp, use_container_width=True)
-        _export_buttons(df_cmp, "comparison")
 
     # Bar chart comparison (numeric metrics only)
     numeric_keys = [k for k in m_a if isinstance(m_a[k], (int, float)) and m_a[k] is not None
@@ -1616,9 +1647,9 @@ def _uae_analytics_compare(filters):
                      barmode="group", color_discrete_sequence=["#006400", "#C8102E"],
                      text="Value")
         fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside", textfont_size=11)
-        fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=420,
+        fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=500,
                           xaxis=dict(tickangle=-45),
-                          margin=dict(l=60, r=220, t=80, b=120))
+                          margin=dict(l=60, r=40, t=80, b=120))
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -1682,15 +1713,9 @@ def _uae_analytics_custom(filters):
         st.warning("Select an enrollment-based dimension (Emirate, Education Type, Gender, Nationality).")
         return
 
-    # alias_cols = SQL AS aliases (= df column names after query)
-    # group_cols = raw DB column names (for GROUP BY clause only)
-    alias_cols = [label.lower().replace(" ", "_")
-                  for label in
-                  [d for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"]]
-    dim_cols = [f"{col} AS {alias}"
-                for alias, (_, col) in
-                zip(alias_cols,
-                    [dim_options[d] for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"])]
+    dim_cols = [f"{col} AS {label.lower().replace(' ', '_')}"
+                for label, (_, col) in
+                [(d, dim_options[d]) for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"]]
     group_cols = [col for _, col in enr_dims]
 
     where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
@@ -1703,13 +1728,12 @@ def _uae_analytics_custom(filters):
     if need_students:
         select_parts.append(f"SUM({enr_cnt_col}) AS total_students")
 
-    # Use alias_cols[0] as the ORDER BY key (matches df column name)
     query = (
         f"SELECT {', '.join(select_parts)} "
         f"FROM uae.uae_fact_enrollment "
         f"WHERE academic_year=%s{where_enr} "
         f"GROUP BY {', '.join(group_cols)} "
-        f"ORDER BY {alias_cols[0]}"
+        f"ORDER BY {group_cols[0]}"
     )
     df = _q(query, [UAE_YEAR] + params_enr)
 
@@ -1717,35 +1741,33 @@ def _uae_analytics_custom(filters):
         st.warning("No data found for selected filters.")
         return
 
-    # Merge key = alias_cols[0] (the actual df column name, e.g. 'emirate')
-    # NOT group_cols[0] (the raw DB col, e.g. 'region_en') — that's not in df!
-    merge_key = alias_cols[0]
-
     # Merge Schools data if needed
     sch_em_col2 = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
     if need_schools and sch_em_col2:
         where_sch2, params_sch2 = _where_clause(filters, allowed_cols=sch_cols)
         df_smerge = _q(
-            f"SELECT {sch_em_col2} AS {merge_key}, SUM({sch_cnt_col}) AS total_schools "
+            f"SELECT {sch_em_col2} AS __dim__, SUM({sch_cnt_col}) AS total_schools "
             f"FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch2} "
             f"GROUP BY {sch_em_col2}",
             [UAE_YEAR] + params_sch2
         )
         if not df_smerge.empty:
-            df = df.merge(df_smerge, on=merge_key, how="left")
+            df_smerge = df_smerge.rename(columns={"__dim__": group_cols[0]})
+            df = df.merge(df_smerge, on=group_cols[0], how="left")
 
     # Merge Teachers data if needed (Total Teachers or PTR)
     tch_em_col2 = _pick_col(tch_cols, "region_en", "emirate", "emirate_en", "region")
     if need_teachers and tch_em_col2:
         where_tch2, params_tch2 = _where_clause(filters, allowed_cols=tch_cols)
         df_tmerge = _q(
-            f"SELECT {tch_em_col2} AS {merge_key}, SUM({tch_cnt_col}) AS total_teachers "
+            f"SELECT {tch_em_col2} AS __dim__, SUM({tch_cnt_col}) AS total_teachers "
             f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch2} "
             f"GROUP BY {tch_em_col2}",
             [UAE_YEAR] + params_tch2
         )
         if not df_tmerge.empty:
-            df = df.merge(df_tmerge, on=merge_key, how="left")
+            df_tmerge = df_tmerge.rename(columns={"__dim__": group_cols[0]})
+            df = df.merge(df_tmerge, on=group_cols[0], how="left")
 
     # Compute PTR if requested
     if "PTR" in sel_metrics and "total_students" in df.columns and "total_teachers" in df.columns:
