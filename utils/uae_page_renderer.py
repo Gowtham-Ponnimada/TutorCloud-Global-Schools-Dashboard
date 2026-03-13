@@ -600,14 +600,12 @@ Interactive analytics with geographic maps and custom reports.
 </div>
 """, unsafe_allow_html=True)
 
-    # ── Footer (matches India dashboard) ──────────────────────────────────
+    # Footer
     st.markdown("---")
     st.markdown(
-        "<div style='text-align: center; color: #757575; "
-        "font-size: clamp(0.8rem, 2vw, 0.9rem);'>"
-        "<p><strong>TutorCloud Global Dashboard</strong></p>"
-        "<p>© 2026 TutorCloud. All rights reserved.</p>"
-        "</div>",
+        "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
+        "<strong>TutorCloud Global Dashboard</strong> — UAE Education Data 2024-25 | "
+        "© 2026 TutorCloud. All rights reserved.</div>",
         unsafe_allow_html=True
     )
 
@@ -718,17 +716,6 @@ def render_uae_state_dashboard():
         _uae_tab_performance(filters)
     with tabs[4]:
         _uae_tab_demographics(filters)
-
-    # ── Footer (matches India dashboard) ──────────────────────────────────
-    st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: #757575; "
-        "font-size: clamp(0.8rem, 2vw, 0.9rem);'>"
-        "<p><strong>TutorCloud Global Dashboard</strong></p>"
-        "<p>© 2026 TutorCloud. All rights reserved.</p>"
-        "</div>",
-        unsafe_allow_html=True
-    )
 
 
 # ── Tab 1: Overview ────────────────────────────────────────────────────────────
@@ -1290,17 +1277,6 @@ def render_uae_analytics():
     with tabs[3]:
         _uae_analytics_custom(filters)
 
-    # ── Footer (matches India dashboard) ──────────────────────────────────
-    st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: #757575; "
-        "font-size: clamp(0.8rem, 2vw, 0.9rem);'>"
-        "<p><strong>TutorCloud Global Dashboard</strong></p>"
-        "<p>© 2026 TutorCloud. All rights reserved.</p>"
-        "</div>",
-        unsafe_allow_html=True
-    )
-
 
 # ── Analytics Tab 1: Geographic Analysis (mirrors India "Geographic Maps") ─────
 
@@ -1706,9 +1682,15 @@ def _uae_analytics_custom(filters):
         st.warning("Select an enrollment-based dimension (Emirate, Education Type, Gender, Nationality).")
         return
 
-    dim_cols = [f"{col} AS {label.lower().replace(' ', '_')}"
-                for label, (_, col) in
-                [(d, dim_options[d]) for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"]]
+    # alias_cols = SQL AS aliases (= df column names after query)
+    # group_cols = raw DB column names (for GROUP BY clause only)
+    alias_cols = [label.lower().replace(" ", "_")
+                  for label in
+                  [d for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"]]
+    dim_cols = [f"{col} AS {alias}"
+                for alias, (_, col) in
+                zip(alias_cols,
+                    [dim_options[d] for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"])]
     group_cols = [col for _, col in enr_dims]
 
     where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
@@ -1721,12 +1703,13 @@ def _uae_analytics_custom(filters):
     if need_students:
         select_parts.append(f"SUM({enr_cnt_col}) AS total_students")
 
+    # Use alias_cols[0] as the ORDER BY key (matches df column name)
     query = (
         f"SELECT {', '.join(select_parts)} "
         f"FROM uae.uae_fact_enrollment "
         f"WHERE academic_year=%s{where_enr} "
         f"GROUP BY {', '.join(group_cols)} "
-        f"ORDER BY {group_cols[0]}"
+        f"ORDER BY {alias_cols[0]}"
     )
     df = _q(query, [UAE_YEAR] + params_enr)
 
@@ -1734,33 +1717,35 @@ def _uae_analytics_custom(filters):
         st.warning("No data found for selected filters.")
         return
 
+    # Merge key = alias_cols[0] (the actual df column name, e.g. 'emirate')
+    # NOT group_cols[0] (the raw DB col, e.g. 'region_en') — that's not in df!
+    merge_key = alias_cols[0]
+
     # Merge Schools data if needed
     sch_em_col2 = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
     if need_schools and sch_em_col2:
         where_sch2, params_sch2 = _where_clause(filters, allowed_cols=sch_cols)
         df_smerge = _q(
-            f"SELECT {sch_em_col2} AS __dim__, SUM({sch_cnt_col}) AS total_schools "
+            f"SELECT {sch_em_col2} AS {merge_key}, SUM({sch_cnt_col}) AS total_schools "
             f"FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch2} "
             f"GROUP BY {sch_em_col2}",
             [UAE_YEAR] + params_sch2
         )
         if not df_smerge.empty:
-            df_smerge = df_smerge.rename(columns={"__dim__": group_cols[0]})
-            df = df.merge(df_smerge, on=group_cols[0], how="left")
+            df = df.merge(df_smerge, on=merge_key, how="left")
 
     # Merge Teachers data if needed (Total Teachers or PTR)
     tch_em_col2 = _pick_col(tch_cols, "region_en", "emirate", "emirate_en", "region")
     if need_teachers and tch_em_col2:
         where_tch2, params_tch2 = _where_clause(filters, allowed_cols=tch_cols)
         df_tmerge = _q(
-            f"SELECT {tch_em_col2} AS __dim__, SUM({tch_cnt_col}) AS total_teachers "
+            f"SELECT {tch_em_col2} AS {merge_key}, SUM({tch_cnt_col}) AS total_teachers "
             f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch2} "
             f"GROUP BY {tch_em_col2}",
             [UAE_YEAR] + params_tch2
         )
         if not df_tmerge.empty:
-            df_tmerge = df_tmerge.rename(columns={"__dim__": group_cols[0]})
-            df = df.merge(df_tmerge, on=group_cols[0], how="left")
+            df = df.merge(df_tmerge, on=merge_key, how="left")
 
     # Compute PTR if requested
     if "PTR" in sel_metrics and "total_students" in df.columns and "total_teachers" in df.columns:
