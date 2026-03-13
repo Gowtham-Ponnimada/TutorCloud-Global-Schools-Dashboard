@@ -674,12 +674,14 @@ Interactive analytics with geographic maps and custom reports.
 </div>
 """, unsafe_allow_html=True)
 
-    # Footer
+    # ── Footer (matches India dashboard) ──────────────────────────────────
     st.markdown("---")
     st.markdown(
-        "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
-        "<strong>TutorCloud Global Dashboard</strong> — UAE Education Data 2024-25 | "
-        "© 2026 TutorCloud. All rights reserved.</div>",
+        "<div style='text-align: center; color: #757575; "
+        "font-size: clamp(0.8rem, 2vw, 0.9rem);'>"
+        "<p><strong>TutorCloud Global Dashboard</strong></p>"
+        "<p>© 2026 TutorCloud. All rights reserved.</p>"
+        "</div>",
         unsafe_allow_html=True
     )
 
@@ -815,6 +817,17 @@ def render_uae_state_dashboard():
         _uae_tab_performance(filters)
     with tabs[4]:
         _uae_tab_demographics(filters)
+
+    # ── Footer (matches India dashboard) ──────────────────────────────────
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #757575; "
+        "font-size: clamp(0.8rem, 2vw, 0.9rem);'>"
+        "<p><strong>TutorCloud Global Dashboard</strong></p>"
+        "<p>© 2026 TutorCloud. All rights reserved.</p>"
+        "</div>",
+        unsafe_allow_html=True
+    )
 
 
 # ── Tab 1: Overview ────────────────────────────────────────────────────────────
@@ -1380,6 +1393,17 @@ def render_uae_analytics():
         _uae_analytics_compare(filters)
     with tabs[3]:
         _uae_analytics_custom(filters)
+
+    # ── Footer (matches India dashboard) ──────────────────────────────────
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #757575; "
+        "font-size: clamp(0.8rem, 2vw, 0.9rem);'>"
+        "<p><strong>TutorCloud Global Dashboard</strong></p>"
+        "<p>© 2026 TutorCloud. All rights reserved.</p>"
+        "</div>",
+        unsafe_allow_html=True
+    )
 
 
 # ── Analytics Tab 1: Geographic Analysis (mirrors India "Geographic Maps") ─────
