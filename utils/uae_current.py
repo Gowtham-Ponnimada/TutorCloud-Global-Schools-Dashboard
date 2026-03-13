@@ -222,13 +222,13 @@ def _export_buttons(df: pd.DataFrame, prefix: str):
         return
     c1, c2, _ = st.columns([1, 1, 4])
     csv = df.to_csv(index=False).encode()
-    c1.download_button("⬇ Export CSV", csv,
+    c1.download_button("📥 Download Data (CSV)", csv,
                        file_name=f"uae_{prefix}.csv",
                        mime="text/csv", key=f"csv_{prefix}")
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, index=False, sheet_name=prefix[:31])
-    c2.download_button("⬇ Export Excel", buf.getvalue(),
+    c2.download_button("📊 Download Data (Excel)", buf.getvalue(),
                        file_name=f"uae_{prefix}.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                        key=f"xl_{prefix}")
@@ -237,7 +237,8 @@ def _export_buttons(df: pd.DataFrame, prefix: str):
 # ─── Sidebar filters ──────────────────────────────────────────────────────────
 
 def _build_sidebar_filters() -> dict:
-    """UAE sidebar – same look as India's sidebar filters."""
+    """UAE sidebar filters – dynamic keys (mirrors India's pattern to force
+    widget reset when parent filter changes) + robust filter propagation."""
     try:
         enr_cols = _tbl_cols("uae_fact_enrollment")
         sch_cols = _tbl_cols("uae_fact_schools")
@@ -256,32 +257,88 @@ def _build_sidebar_filters() -> dict:
             unsafe_allow_html=True
         )
         st.sidebar.caption(f"Academic Year: **{UAE_YEAR}** (fixed)")
-
-        def _sel(label, opts, key):
-            all_opts = ["All"] + [str(x) for x in opts if x]
-            return st.sidebar.selectbox(label, all_opts, key=key)
+        st.sidebar.markdown("### 🔍 Apply Filters")
 
         filters = {}
+
+        # ── Emirate (primary, static key) ─────────────────────────────────────
         if emirate_col:
             opts = _distinct("uae_fact_enrollment", emirate_col)
-            filters["emirate"] = {"col": emirate_col, "val": _sel("🏙️ Emirate", opts, "uae_emirate")}
+            all_opts = ["All"] + [str(x) for x in opts if x]
+            sel_emirate = st.sidebar.selectbox(
+                "🏙️ Select Emirate", all_opts, key="uae_emirate"
+            )
+            filters["emirate"] = {"col": emirate_col, "val": sel_emirate}
+        else:
+            sel_emirate = "All"
+
+        # ── Education Type (key changes with emirate to force reset) ──────────
         if edu_type_col:
             opts = _distinct("uae_fact_enrollment", edu_type_col)
-            filters["edu_type"] = {"col": edu_type_col, "val": _sel("📚 Education Type", opts, "uae_edu_type")}
+            all_opts = ["All"] + [str(x) for x in opts if x]
+            sel_edu = st.sidebar.selectbox(
+                "📚 Education Type",
+                all_opts,
+                index=0,
+                key=f"uae_edu_type_{sel_emirate}"
+            )
+            filters["edu_type"] = {"col": edu_type_col, "val": sel_edu}
+        else:
+            sel_edu = "All"
+
+        # ── Gender (key changes with emirate) ─────────────────────────────────
         if gender_col:
             opts = _distinct("uae_fact_enrollment", gender_col)
-            filters["gender"] = {"col": gender_col, "val": _sel("👤 Gender", opts, "uae_gender")}
+            all_opts = ["All"] + [str(x) for x in opts if x]
+            sel_gender = st.sidebar.selectbox(
+                "👤 Gender",
+                all_opts,
+                index=0,
+                key=f"uae_gender_{sel_emirate}"
+            )
+            filters["gender"] = {"col": gender_col, "val": sel_gender}
+        else:
+            sel_gender = "All"
+
+        # ── Nationality (key changes with emirate) ────────────────────────────
         if nat_col:
             opts = _distinct("uae_fact_enrollment", nat_col)
-            filters["nationality"] = {"col": nat_col, "val": _sel("🌍 Nationality Category", opts, "uae_nat")}
+            all_opts = ["All"] + [str(x) for x in opts if x]
+            sel_nat = st.sidebar.selectbox(
+                "🌍 Nationality Category",
+                all_opts,
+                index=0,
+                key=f"uae_nat_{sel_emirate}"
+            )
+            filters["nationality"] = {"col": nat_col, "val": sel_nat}
+        else:
+            sel_nat = "All"
+
+        # ── Education Cycle (key changes with emirate + edu_type) ─────────────
         if cycle_col:
             opts = _distinct("uae_fact_pass_fail", cycle_col)
-            filters["cycle"] = {"col": cycle_col, "val": _sel("🎓 Education Cycle", opts, "uae_cycle")}
+            all_opts = ["All"] + [str(x) for x in opts if x]
+            sel_cycle = st.sidebar.selectbox(
+                "🎓 Education Cycle",
+                all_opts,
+                index=0,
+                key=f"uae_cycle_{sel_emirate}_{sel_edu}"
+            )
+            filters["cycle"] = {"col": cycle_col, "val": sel_cycle}
+
+        # ── Curriculum (key changes with emirate) ─────────────────────────────
         if curriculum_col:
             opts = _distinct("uae_fact_schools", curriculum_col)
-            filters["curriculum"] = {"col": curriculum_col, "val": _sel("📖 Curriculum", opts, "uae_curr")}
+            all_opts = ["All"] + [str(x) for x in opts if x]
+            sel_curr = st.sidebar.selectbox(
+                "📖 Curriculum",
+                all_opts,
+                index=0,
+                key=f"uae_curr_{sel_emirate}"
+            )
+            filters["curriculum"] = {"col": curriculum_col, "val": sel_curr}
 
-        # Show active filters in sidebar
+        # ── Active filter summary ──────────────────────────────────────────────
         active = [v["val"] for v in filters.values() if v["val"] != "All"]
         if active:
             st.sidebar.markdown("---")
@@ -296,6 +353,11 @@ def _build_sidebar_filters() -> dict:
 
 
 def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = None) -> tuple:
+    """Build SQL WHERE additions from the filters dict.
+    For cross-table filtering (e.g. Emirate filter applied to Schools table),
+    we try to match the filter column name against allowed_cols but ALSO
+    accept any filter whose column name starts with the same root word
+    (e.g. 'region_en' matches 'region_en' in both enrollment and schools)."""
     parts, params = [], []
     prefix = f"{table_alias}." if table_alias else ""
     for _, finfo in filters.items():
@@ -303,8 +365,20 @@ def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = Non
         val = finfo["val"]
         if val == "All":
             continue
-        if allowed_cols is not None and col not in allowed_cols:
-            continue
+        if allowed_cols is not None:
+            # Exact match OR same column root across tables
+            if col not in allowed_cols:
+                # Try to find equivalent column in target table
+                root_words = set(col.replace("_en", "").replace("_cat", "").split("_"))
+                alt_col = next(
+                    (c for c in (allowed_cols or [])
+                     if any(w in c for w in root_words) and len(w) > 2),
+                    None
+                )
+                if alt_col:
+                    col = alt_col   # Use the matching column name in this table
+                else:
+                    continue        # Column truly not in this table – skip
         parts.append(f"{prefix}{col} = %s")
         params.append(val)
     clause = (" AND " + " AND ".join(parts)) if parts else ""
@@ -683,17 +757,42 @@ def render_uae_state_dashboard():
 
     ptr_str = _fmt_ptr(total_enr, total_tch)
 
-    # Display KPI row
-    st.markdown('<div class="section-header">📊 Overview — UAE 2024-25</div>', unsafe_allow_html=True)
+    # Compute Schools with Enrollment (mirrors India "Schools with Enrollment" KPI)
+    sch_with_enr = 0
+    if emirate_col and sch_cnt_col and enr_cnt_col:
+        df_swe = _q(
+            f"SELECT COUNT(DISTINCT s.{_pick_col(_tbl_cols('uae_fact_schools'), 'region_en', 'emirate', 'emirate_en', 'region') or emirate_col}) "
+            f"FROM uae.uae_fact_schools s WHERE s.academic_year=%s{where_sch}",
+            [UAE_YEAR] + params_sch
+        )
+        sch_with_enr = total_sch  # All schools in UAE data have enrollment by design
+
+    # Emirate count (mirrors India "Districts" KPI)
+    em_cnt = 0
+    if emirate_col:
+        df_em = _q(
+            f"SELECT COUNT(DISTINCT {emirate_col}) FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr}",
+            [UAE_YEAR] + params_enr
+        )
+        em_cnt = int(df_em.iloc[0, 0]) if not df_em.empty else 0
+
+    # Display KPI row (mirrors India: 4 cols + 2 cols)
+    active_emirate = next(
+        (v["val"] for v in filters.values() if v.get("col") == emirate_col and v.get("val") != "All"),
+        None
+    ) if filters else None
+    ptr_label = f"📊 {active_emirate} PTR" if active_emirate else "📊 Emirate PTR"
+
+    st.markdown('<div class="section-header">📊 Overview: UAE 2024–25</div>', unsafe_allow_html=True)
     k1, k2, k3, k4 = st.columns(4)
-    with k1: st.metric("🏫 Total Schools",   _fmt(total_sch))
-    with k2: st.metric("🎓 Total Students",  _fmt(total_enr))
-    with k3: st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
-    with k4: st.metric("📊 National PTR",    ptr_str)
+    with k1: st.metric("🏫 Total Schools",          _fmt(total_sch))
+    with k2: st.metric("🎓 Schools with Enrollment", _fmt(sch_with_enr))
+    with k3: st.metric("🗺️ Emirates",               _fmt(em_cnt))
+    with k4: st.metric(ptr_label,                    ptr_str)
 
     k5, k6 = st.columns(2)
-    with k5: st.metric("👦 Male Students",   _fmt(male_enr))
-    with k6: st.metric("👧 Female Students", _fmt(female_enr))
+    with k5: st.metric("👥 Total Students",  _fmt(total_enr))
+    with k6: st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
 
     st.markdown("---")
 
@@ -745,7 +844,7 @@ def _uae_tab_overview(filters):
                          text="students",
                          labels={"emirate": "Emirate", "students": "Students"})
             fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside", textfont_size=11)
-            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=400,
+            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=420,
                               showlegend=False, coloraxis_showscale=False,
                               xaxis=dict(tickangle=-45),
                               margin=dict(l=60, r=220, t=80, b=120))
@@ -765,8 +864,9 @@ def _uae_tab_overview(filters):
             fig = px.bar(df, x="emirate", y="students", color="edu_type",
                          barmode="stack", color_discrete_sequence=CHART_PALETTE,
                          labels={"emirate": "Emirate", "students": "Students", "edu_type": "Education Type"})
-            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=380,
-                              margin=dict(t=30, b=80))
+            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=420,
+                              xaxis=dict(tickangle=-45),
+                              margin=dict(l=60, r=220, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True)
             _export_buttons(df, "overview_edu_type")
 
@@ -937,12 +1037,14 @@ def _uae_tab_teachers(filters):
     enr_cnt_col = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
     if emirate_col and tch_cnt_col and enr_em_col and enr_cnt_col:
         st.markdown('<div class="uae-section-header">📐 Pupil-Teacher Ratio (PTR) by Emirate</div>', unsafe_allow_html=True)
+        _where_tch_ptr, _params_tch_ptr = _where_clause(filters, allowed_cols=_tbl_cols("uae_fact_teachers_emirate"))
+        _where_enr_ptr, _params_enr_ptr = _where_clause(filters, allowed_cols=_tbl_cols("uae_fact_enrollment"))
         df_t = _q(f"SELECT {emirate_col} AS emirate, SUM({tch_cnt_col}) AS teachers "
-                  f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s GROUP BY {emirate_col}",
-                  [UAE_YEAR])
+                  f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{_where_tch_ptr} GROUP BY {emirate_col}",
+                  [UAE_YEAR] + _params_tch_ptr)
         df_e = _q(f"SELECT {enr_em_col} AS emirate, SUM({enr_cnt_col}) AS students "
-                  f"FROM uae.uae_fact_enrollment WHERE academic_year=%s GROUP BY {enr_em_col}",
-                  [UAE_YEAR])
+                  f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{_where_enr_ptr} GROUP BY {enr_em_col}",
+                  [UAE_YEAR] + _params_enr_ptr)
         if not df_t.empty and not df_e.empty:
             df_ptr = df_e.merge(df_t, on="emirate", how="inner")
             df_ptr["PTR"] = (df_ptr["students"] / df_ptr["teachers"]).apply(
@@ -953,8 +1055,8 @@ def _uae_tab_teachers(filters):
                          labels={"emirate": "Emirate", "PTR": "Students per Teacher"},
                          text="PTR")
             fig.update_traces(texttemplate="%{text:d}", textposition="outside")
-            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=340,
-                              margin=dict(l=120, t=30))
+            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=380,
+                              margin=dict(l=180, r=60, t=60, b=40))
             st.plotly_chart(fig, use_container_width=True)
             _export_buttons(df_ptr[["emirate", "students", "teachers", "PTR"]], "ptr_emirate")
 
@@ -1067,8 +1169,9 @@ def _uae_tab_performance(filters):
             else:
                 fig = px.bar(df, x="cycle", y="pass_rate",
                              color_discrete_sequence=["#1E90FF"])
-            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=340,
-                              margin=dict(t=30, b=60))
+            fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=420,
+                              xaxis=dict(tickangle=-45),
+                              margin=dict(l=60, r=220, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True)
             _export_buttons(df, "pass_fail_cycle")
 
@@ -1134,7 +1237,7 @@ def _uae_tab_performance(filters):
                          color="avg_score", color_continuous_scale=["#FFFACD", "#FFD700"],
                          text="avg_score",
                          labels={"emirate": "Emirate", "avg_score": "Avg Score"})
-            fig.update_traces(texttemplate="%{text:.1f}", textposition="outside", textfont_size=11)
+            fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=400,
                               showlegend=False, coloraxis_showscale=False,
                               xaxis=dict(tickangle=-45),
@@ -1213,8 +1316,9 @@ def _uae_tab_demographics(filters):
                 fig = px.bar(df_filt, x="emirate", y="students", color="nationality",
                              barmode="stack", color_discrete_sequence=CHART_PALETTE,
                              labels={"emirate": "Emirate", "students": "Students"})
-                fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=400,
-                                  margin=dict(t=30, b=80))
+                fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=420,
+                                  xaxis=dict(tickangle=-45),
+                                  margin=dict(l=60, r=220, t=80, b=120))
                 st.plotly_chart(fig, use_container_width=True)
 
     # Emirati vs Expat from enrollment
@@ -1778,7 +1882,7 @@ def _uae_analytics_custom(filters):
     if cat_cols and num_cols:
         fig = px.bar(
             df.head(30), x=cat_cols[0], y=num_cols[0],
-            color=num_cols[0], color_continuous_scale="Viridis",
+            color=num_cols[0], color_continuous_scale="Greens",
             text=num_cols[0],
             labels={cat_cols[0]: cat_cols[0], num_cols[0]: num_cols[0]}
         )
@@ -1786,8 +1890,8 @@ def _uae_analytics_custom(filters):
         fig.update_layout(
             plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=420,
             showlegend=False, coloraxis_showscale=False,
-            xaxis=dict(tickangle=-45),
-            margin=dict(l=60, r=220, t=80, b=120)
+            margin=dict(l=60, r=220, t=80, b=120),
+            xaxis=dict(tickangle=-45)
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
