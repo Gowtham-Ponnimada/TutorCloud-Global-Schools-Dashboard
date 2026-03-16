@@ -1,5 +1,7 @@
 import streamlit as st
 
+st.session_state.pop('_badge_rendered', None)
+
 # TutorCloud Global Dashboard — Multi-Region
 # India: ✅ Live  |  UAE: ✅ Live  |  USA / AUS / NZ: Coming Soon
 
