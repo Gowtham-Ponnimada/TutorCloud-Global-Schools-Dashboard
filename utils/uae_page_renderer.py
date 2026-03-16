@@ -1293,8 +1293,9 @@ def render_uae_analytics():
         unsafe_allow_html=True
     )
 
-    # Sidebar filters enabled on Analytics page – mirrors State Dashboard
-    filters = _build_sidebar_filters()
+    # UAE Analytics: no extra sidebar filters — only global Region selector
+    # (render_region_badge in ui_styles.py handles India/UAE switching)
+    filters = {}
 
     tabs = st.tabs([
         "🗺️ Geographic Maps",
