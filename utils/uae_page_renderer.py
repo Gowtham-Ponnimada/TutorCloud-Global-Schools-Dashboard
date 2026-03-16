@@ -1729,6 +1729,9 @@ def _uae_analytics_custom(filters):
                 for label, (_, col) in
                 [(d, dim_options[d]) for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"]]
     group_cols = [col for _, col in enr_dims]
+    # SELECT aliases raw col (e.g. region_en AS emirate); use alias for Python merge
+    _enr_dim_labels = [d for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"]
+    merge_col = _enr_dim_labels[0].lower().replace(' ', '_') if _enr_dim_labels else group_cols[0]
 
     where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
 
@@ -1764,8 +1767,8 @@ def _uae_analytics_custom(filters):
             [UAE_YEAR] + params_sch2
         )
         if not df_smerge.empty:
-            df_smerge = df_smerge.rename(columns={"__dim__": group_cols[0]})
-            df = df.merge(df_smerge, on=group_cols[0], how="left")
+            df_smerge = df_smerge.rename(columns={"__dim__": merge_col})
+            df = df.merge(df_smerge, on=merge_col, how="left")
 
     # Merge Teachers data if needed (Total Teachers or PTR)
     tch_em_col2 = _pick_col(tch_cols, "region_en", "emirate", "emirate_en", "region")
@@ -1778,8 +1781,8 @@ def _uae_analytics_custom(filters):
             [UAE_YEAR] + params_tch2
         )
         if not df_tmerge.empty:
-            df_tmerge = df_tmerge.rename(columns={"__dim__": group_cols[0]})
-            df = df.merge(df_tmerge, on=group_cols[0], how="left")
+            df_tmerge = df_tmerge.rename(columns={"__dim__": merge_col})
+            df = df.merge(df_tmerge, on=merge_col, how="left")
 
     # Compute PTR if requested
     if "PTR" in sel_metrics and "total_students" in df.columns and "total_teachers" in df.columns:
