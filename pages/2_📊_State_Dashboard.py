@@ -1034,7 +1034,7 @@ def main():
         fig_grades.update_layout(
             showlegend=True,
             xaxis_tickangle=-45,
-            margin=dict(l=60, r=220, t=80, b=120)
+            margin=dict(l=60, r=40, t=80, b=120)
         )
         
         st.plotly_chart(fig_grades, config={"displayModeBar": False}, use_container_width=True)
@@ -1077,7 +1077,7 @@ def main():
             fig_ptr.update_layout(
                 showlegend=True,
                 xaxis_tickangle=-45,
-                margin=dict(l=60, r=220, t=80, b=120)
+                margin=dict(l=60, r=40, t=80, b=120)
             )
             st.plotly_chart(fig_ptr, config={"displayModeBar": False}, use_container_width=True)
         
@@ -1129,7 +1129,7 @@ def main():
                 fig_block_ptr.update_layout(
                     showlegend=True,
                     xaxis_tickangle=-45,
-                    margin=dict(l=60, r=220, t=80, b=120)
+                    margin=dict(l=60, r=40, t=80, b=120)
                 )
                 st.plotly_chart(fig_block_ptr, config={"displayModeBar": False}, use_container_width=True)
             

@@ -347,7 +347,7 @@ with tabs[0]:
                 color_continuous_scale="Viridis"
             )
         
-        fig.update_layout(xaxis_tickangle=-45, showlegend=True, margin=dict(l=60, r=350, t=80, b=120))
+        fig.update_layout(xaxis_tickangle=-45, showlegend=True, margin=dict(l=60, r=40, t=80, b=120))
         st.plotly_chart(fig, config={"displayModeBar": False}, use_container_width=True)
         
         # Data table - Format PTR as X:1
