@@ -157,14 +157,25 @@ def _q(sql: str, params=None) -> pd.DataFrame:
     return _direct_q(sql, params)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def _tbl_cols(table: str) -> list:
+    """Return column list for a UAE table.
+    NOT cached at this level — caching empty results caused a 1-hour
+    blind-spot when DB was briefly unavailable at startup (KeyError: 'region_en').
+    Results are still fast because _direct_q uses a short-lived psycopg2 pool.
+    """
     df = _direct_q(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_schema='uae' AND table_name=%s ORDER BY ordinal_position",
         [table]
     )
-    return df["column_name"].tolist() if not df.empty else []
+    cols = df["column_name"].tolist() if not df.empty else []
+    # Warn in sidebar if DB returned nothing (helps diagnose connection issues)
+    if not cols:
+        try:
+            st.sidebar.warning(f"⚠️ UAE schema: table '{table}' not found. Check DB connection.")
+        except Exception:
+            pass
+    return cols
 
 
 def _pick_col(cols: list, *candidates) -> str:
@@ -1282,8 +1293,8 @@ def render_uae_analytics():
         unsafe_allow_html=True
     )
 
-    # No sidebar filters on Analytics page (matches India Analytics)
-    filters = {}  # empty – filters are inline per tab, not sidebar
+    # Sidebar filters enabled on Analytics page – mirrors State Dashboard
+    filters = _build_sidebar_filters()
 
     tabs = st.tabs([
         "🗺️ Geographic Maps",
