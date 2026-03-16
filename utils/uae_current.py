@@ -157,6 +157,81 @@ def _q(sql: str, params=None) -> pd.DataFrame:
     return _direct_q(sql, params)
 
 
+
+# ---------------------------------------------------------------------------
+# [MV_PATCH_v3] curriculum-aware KPI  ←  DO NOT REMOVE THIS LINE
+# ---------------------------------------------------------------------------
+def _mv_curriculum_kpi(academic_year: str,
+                        curriculum_val: str,
+                        emirate_val: str | None = None,
+                        edtype_val: str | None  = None) -> dict:
+    """
+    Query uae.mv_uae_curriculum_kpi and return a dict with curriculum-scoped
+    KPI values.  Returns None if the MV doesn't exist (graceful fallback).
+
+    Keys returned
+    -------------
+    school_count, student_count, teacher_count, staff_count,
+    female_students, male_students, emirati_students, resident_students,
+    female_teachers, male_teachers, emirati_teachers, resident_teachers,
+    student_teacher_ratio, students_per_school,
+    has_enrollment_data, has_teacher_data, row_count
+    """
+    wheres  = ["academic_year = %s", "curriculum_en = %s"]
+    params  = [academic_year, curriculum_val]
+    if emirate_val and emirate_val not in ("All", "", None):
+        wheres.append("region_en = %s")
+        params.append(emirate_val)
+    if edtype_val and edtype_val not in ("All", "", None):
+        wheres.append("education_type = %s")
+        params.append(edtype_val)
+    where_sql = " AND ".join(wheres)
+
+    agg_sql = f"""
+        SELECT
+            COALESCE(SUM(school_count),   0)               AS school_count,
+            SUM(student_count)                             AS student_count,
+            SUM(teacher_count)                             AS teacher_count,
+            SUM(staff_count)                               AS staff_count,
+            SUM(female_students)                           AS female_students,
+            SUM(male_students)                             AS male_students,
+            SUM(emirati_students)                          AS emirati_students,
+            SUM(resident_students)                         AS resident_students,
+            SUM(female_teachers)                           AS female_teachers,
+            SUM(male_teachers)                             AS male_teachers,
+            SUM(emirati_teachers)                          AS emirati_teachers,
+            SUM(resident_teachers)                         AS resident_teachers,
+            BOOL_OR(has_enrollment_data)                   AS has_enrollment_data,
+            BOOL_OR(has_teacher_data)                      AS has_teacher_data,
+            COUNT(*)                                       AS row_count
+        FROM uae.mv_uae_curriculum_kpi
+        WHERE {where_sql}
+    """
+    try:
+        rows = _q(agg_sql, params)
+        if not rows:
+            return None
+        r = rows[0]
+        return {
+            "school_count":       int(r[0]  or 0),
+            "student_count":      r[1],          # None if no enr data
+            "teacher_count":      r[2],          # None if no tch data
+            "staff_count":        r[3],
+            "female_students":    r[4],
+            "male_students":      r[5],
+            "emirati_students":   r[6],
+            "resident_students":  r[7],
+            "female_teachers":    r[8],
+            "male_teachers":      r[9],
+            "emirati_teachers":   r[10],
+            "resident_teachers":  r[11],
+            "has_enrollment_data": bool(r[12]),
+            "has_teacher_data":   bool(r[13]),
+            "row_count":          int(r[14] or 0),
+        }
+    except Exception:
+        return None          # MV not available – caller falls back gracefully
+
 def _tbl_cols(table: str) -> list:
     """Return column list for a UAE table.
     NOT cached at this level — caching empty results caused a 1-hour
@@ -804,16 +879,82 @@ def render_uae_state_dashboard():
     ) if filters else None
     ptr_label = f"📊 {active_emirate} PTR" if active_emirate else "📊 Emirate PTR"
 
-    st.markdown('<div class="section-header">📊 Overview: UAE 2024–25</div>', unsafe_allow_html=True)
-    k1, k2, k3, k4 = st.columns(4)
-    with k1: st.metric("🏫 Total Schools",          _fmt(total_sch))
-    with k2: st.metric("🎓 Schools with Enrollment", _fmt(sch_with_enr))
-    with k3: st.metric("🗺️ Emirates",               _fmt(em_cnt))
-    with k4: st.metric(ptr_label,                    ptr_str)
+    # Display KPI row  [MV_KPI_BLOCK_v3b]
+    _curr_active = (
+        "curriculum" in filters
+        and filters["curriculum"].get("val") not in ("All", "", None)
+    )
 
-    k5, k6 = st.columns(2)
-    with k5: st.metric("👥 Total Students",  _fmt(total_enr))
-    with k6: st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
+    if _curr_active:
+        _curr_val  = filters["curriculum"]["val"]
+        _emir_raw  = filters.get("emirate", {}).get("val") if "emirate" in filters else None
+        _edtyp_val = filters.get("education_type", {}).get("val") if "education_type" in filters else None
+        _emir_val  = _emir_raw if _emir_raw and _emir_raw not in ("All", "") else None
+        _scope_lbl = _emir_val.title() if _emir_val else "UAE"
+
+        mv = _mv_curriculum_kpi(UAE_YEAR, _curr_val, _emir_val, _edtyp_val)
+
+        if mv and mv["row_count"] > 0:
+            _mv_schools  = mv["school_count"]
+            _mv_enr_ok   = mv["has_enrollment_data"]
+            _mv_tch_ok   = mv["has_teacher_data"]
+
+            _mv_students = int(mv["student_count"]) if (_mv_enr_ok and mv["student_count"] is not None) else None
+            _mv_teachers = int(mv["teacher_count"]) if (_mv_tch_ok and mv["teacher_count"] is not None) else None
+            _mv_ptr      = _fmt_ptr(_mv_students or 0, _mv_teachers or 0) if (_mv_students and _mv_teachers) else "N/A"
+            _ptr_lbl     = f"📊 {_scope_lbl} PTR"
+
+            st.markdown(
+                f'<div class="section-header">📊 {_scope_lbl} · {_curr_val} · 2024–25</div>',
+                unsafe_allow_html=True
+            )
+            k1, k2, k3, k4 = st.columns(4)
+            with k1: st.metric("🏫 Total Schools",
+                                _fmt(_mv_schools),
+                                help=f"Schools offering {_curr_val} in {_scope_lbl}")
+            with k2: st.metric("🎓 Schools with Enrollment",
+                                _fmt(_mv_schools))
+            with k3: st.metric(f"🗺️ Emirate",
+                                _scope_lbl)
+            with k4: st.metric(_ptr_lbl, _mv_ptr)
+
+            k5, k6 = st.columns(2)
+            with k5: st.metric(f"👥 Students · {_scope_lbl}",
+                                _fmt(_mv_students) if _mv_students is not None else "N/A",
+                                help="Proportional estimate based on school-share within education type")
+            with k6: st.metric(f"👨‍🏫 Teachers · {_scope_lbl}",
+                                _fmt(_mv_teachers) if _mv_teachers is not None else "N/A",
+                                help="Proportional estimate based on school-share within education type")
+
+            if _mv_enr_ok:
+                st.info(
+                    f"📌 **Curriculum filter: {_curr_val}  |  Scope: {_scope_lbl}**\n\n"
+                    f"School count is **exact**. Student & teacher counts are **proportional estimates** "
+                    f"(curriculum school-share × emirate/education-type total). "
+                    f"Aggregate across all curricula equals the Home page total.",
+                    icon="ℹ️"
+                )
+            else:
+                st.warning(
+                    f"⚠️ **{_curr_val}** is a private/specialist curriculum. "
+                    f"Student enrollment data is not available at curriculum level. "
+                    f"Only school count ({_fmt(_mv_schools)}) is accurate.",
+                    icon="⚠️"
+                )
+        else:
+            st.info("ℹ️ Curriculum KPI view not yet available — showing emirate-wide totals.", icon="ℹ️")
+            mv = None
+
+    if not _curr_active or not (mv and mv["row_count"] > 0):
+        st.markdown('<div class="section-header">📊 Overview: UAE 2024–25</div>', unsafe_allow_html=True)
+        k1, k2, k3, k4 = st.columns(4)
+        with k1: st.metric("🏫 Total Schools",          _fmt(total_sch))
+        with k2: st.metric("🎓 Schools with Enrollment", _fmt(sch_with_enr))
+        with k3: st.metric("🗺️ Emirates",               _fmt(em_cnt))
+        with k4: st.metric(ptr_label,                    ptr_str)
+        k5, k6 = st.columns(2)
+        with k5: st.metric("👥 Total Students",  _fmt(total_enr))
+        with k6: st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
 
     st.markdown("---")
 
