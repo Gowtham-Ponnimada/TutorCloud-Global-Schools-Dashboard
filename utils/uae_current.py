@@ -209,9 +209,35 @@ def _mv_curriculum_kpi(academic_year: str,
     """
     try:
         rows = _q(agg_sql, params)
-        if not rows:
+        if rows is None or rows.empty:  # MV_HELPER_FIX_v3d – DataFrame-safe empty check
             return None
-        r = rows[0]
+        r = rows.iloc[0]  # MV_HELPER_FIX_v3d – first row of DataFrame
+        # Unpack named columns into a list so existing r[N] indexing is preserved
+        import math as _math
+        def _sv(v):
+            """SQL NULL (pandas NaN/None) → Python None."""
+            if v is None:
+                return None
+            if isinstance(v, float) and _math.isnan(v):
+                return None
+            return v
+        r = [
+            _sv(r["school_count"]),        # r[0]
+            _sv(r["student_count"]),        # r[1]
+            _sv(r["teacher_count"]),        # r[2]
+            _sv(r["staff_count"]),          # r[3]
+            _sv(r["female_students"]),      # r[4]
+            _sv(r["male_students"]),        # r[5]
+            _sv(r["emirati_students"]),     # r[6]
+            _sv(r["resident_students"]),    # r[7]
+            _sv(r["female_teachers"]),      # r[8]
+            _sv(r["male_teachers"]),        # r[9]
+            _sv(r["emirati_teachers"]),     # r[10]
+            _sv(r["resident_teachers"]),    # r[11]
+            _sv(r["has_enrollment_data"]),  # r[12]
+            _sv(r["has_teacher_data"]),     # r[13]
+            _sv(r["row_count"]),            # r[14]
+        ]
         return {
             "school_count":       int(r[0]  or 0),
             "student_count":      r[1],          # None if no enr data
@@ -229,7 +255,8 @@ def _mv_curriculum_kpi(academic_year: str,
             "has_teacher_data":   bool(r[13]),
             "row_count":          int(r[14] or 0),
         }
-    except Exception:
+    except Exception as _exc:  # MV_HELPER_FIX_v3d
+        print(f"[_mv_curriculum_kpi ERROR] {_exc}")
         return None          # MV not available – caller falls back gracefully
 
 def _tbl_cols(table: str) -> list:
