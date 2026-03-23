@@ -428,7 +428,16 @@ def _build_sidebar_filters() -> dict:
                 index=0,
                 key=f"uae_gender_{sel_emirate}"
             )
-            filters["gender"] = {"col": gender_col, "val": sel_gender}
+            filters["gender"] = {
+                "col": gender_col,
+                "val": sel_gender,
+                "apply_to": [
+                    "uae_fact_enrollment",
+                    "uae_fact_student_nationalities",
+                    "uae_fact_student_scores",
+                    "uae_fact_pass_fail",
+                ],
+            }
         else:
             sel_gender = "All"
 
@@ -501,15 +510,27 @@ def _build_sidebar_filters() -> dict:
         return {}
 
 
-def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = None) -> tuple:
+def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = None, table_name: str = "") -> tuple:
     """Build SQL WHERE additions from the filters dict.
     Supports op='in' for list-based IN clauses (curriculum cross-filter).
-    For cross-table filtering, tries exact column match then root-word match."""
+    For cross-table filtering, tries exact column match then root-word match.
+
+    UAE_GENDER_SCOPE_FIX_v1:
+    Some filters are semantically scoped to only certain fact tables. For example,
+    the sidebar Gender filter is a *student gender* filter sourced from enrollment,
+    so it must not silently map onto school_gender / teacher_gender in other tables.
+    """
     parts, params = [], []
     prefix = f"{table_alias}." if table_alias else ""
     for _, finfo in filters.items():
         col = finfo["col"]
         val = finfo["val"]
+
+        # Optional table scoping for semantically-sensitive filters
+        apply_to = finfo.get("apply_to")
+        if table_name and apply_to and table_name not in apply_to:
+            continue
+
         # ── IN-list operator (curriculum cross-filter) ───────────────────
         if finfo.get("op") == "in":
             if allowed_cols is not None and col not in allowed_cols:
@@ -519,6 +540,7 @@ def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = Non
                 parts.append(f"{prefix}{col} IN ({placeholders})")
                 params.extend(val)
             continue
+
         # ── Standard equality filter ─────────────────────────────────────
         if val == "All":
             continue
@@ -572,7 +594,7 @@ def render_uae_home():
     tch_cnt_col = _pick_col(tch_cols, "teacher_count", "num_teachers", "count", "teachers")
     gender_col  = _pick_col(enr_cols, "gender", "student_gender")
 
-    where, params = _where_clause(filters, allowed_cols=enr_cols)
+    where, params = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
 
     # ─────────────────────────────────────────────────────────────────────────
     # KPI SECTION  ── 6 metrics in 2 rows (same structure as India)
@@ -592,7 +614,7 @@ def render_uae_home():
     # Total schools
     total_sch = 0
     if sch_cnt_col:
-        sch_where, sch_params = _where_clause(filters, allowed_cols=sch_cols)
+        sch_where, sch_params = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
         df = _q(f"SELECT COALESCE(SUM({sch_cnt_col}),0) FROM uae.uae_fact_schools WHERE academic_year=%s{sch_where}",
                 [UAE_YEAR] + sch_params)
         total_sch = int(df.iloc[0, 0]) if not df.empty else 0
@@ -617,7 +639,7 @@ def render_uae_home():
     # Total teachers
     total_tch = 0
     if tch_cnt_col:
-        tch_where, tch_params = _where_clause(filters, allowed_cols=tch_cols)
+        tch_where, tch_params = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
         df = _q(f"SELECT COALESCE(SUM({tch_cnt_col}),0) FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{tch_where}",
                 [UAE_YEAR] + tch_params)
         total_tch = int(df.iloc[0, 0]) if not df.empty else 0
@@ -692,7 +714,7 @@ def render_uae_home():
     if emirate_col and sch_cnt_col:
         sch_em_col = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
         if sch_em_col:
-            sch_where, sch_params = _where_clause(filters, allowed_cols=sch_cols)
+            sch_where, sch_params = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
             df_sch = _q(
                 f"SELECT {sch_em_col} AS emirate, SUM({sch_cnt_col}) AS schools "
                 f"FROM uae.uae_fact_schools WHERE academic_year=%s{sch_where} "
@@ -864,9 +886,9 @@ def render_uae_state_dashboard():
     tch_cnt_col = _pick_col(tch_cols, "teacher_count", "num_teachers", "count", "teachers")
     gender_col  = _pick_col(enr_cols, "gender", "student_gender")
 
-    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
-    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols)
-    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols)
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
+    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
+    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
 
     # Compute KPIs
     total_enr = 0
@@ -1058,7 +1080,7 @@ def _uae_tab_overview(filters):
     edu_col     = _pick_col(enr_cols, "education_type", "school_type", "edu_type", "type", "education_level")
     nat_col     = _pick_col(enr_cols, "nationality_cat", "nationality_category", "nationality")
 
-    where, params = _where_clause(filters, allowed_cols=enr_cols)
+    where, params = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
 
     # Emirate-wise enrollment bar
     st.markdown('<div class="uae-section-header">📊 Emirate-wise Enrollment</div>', unsafe_allow_html=True)
@@ -1147,7 +1169,7 @@ def _uae_tab_schools(filters):
     gender_col  = _pick_col(sch_cols, "gender", "school_gender")
     level_col   = _pick_col(sch_cols, "school_level", "level", "education_level", "cycle")
 
-    where, params = _where_clause(filters, allowed_cols=sch_cols)
+    where, params = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
 
     # Schools by emirate
     st.markdown('<div class="uae-section-header">🏫 School Count by Emirate</div>', unsafe_allow_html=True)
@@ -1232,7 +1254,7 @@ def _uae_tab_teachers(filters):
     gender_col  = _pick_col(tch_cols, "gender", "teacher_gender")
     nat_col     = _pick_col(tch_cols, "nationality_cat", "nationality_category", "nationality")
 
-    where, params = _where_clause(filters, allowed_cols=tch_cols)
+    where, params = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
 
     # Teachers by emirate
     st.markdown('<div class="uae-section-header">👨‍🏫 Teacher Count by Emirate</div>', unsafe_allow_html=True)
@@ -1260,8 +1282,8 @@ def _uae_tab_teachers(filters):
     enr_cnt_col = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
     if emirate_col and tch_cnt_col and enr_em_col and enr_cnt_col:
         st.markdown('<div class="uae-section-header">📐 Pupil-Teacher Ratio (PTR) by Emirate</div>', unsafe_allow_html=True)
-        _where_tch_ptr, _params_tch_ptr = _where_clause(filters, allowed_cols=_tbl_cols("uae_fact_teachers_emirate"))
-        _where_enr_ptr, _params_enr_ptr = _where_clause(filters, allowed_cols=_tbl_cols("uae_fact_enrollment"))
+        _where_tch_ptr, _params_tch_ptr = _where_clause(filters, allowed_cols=_tbl_cols("uae_fact_teachers_emirate"), table_name="uae_fact_teachers_emirate")
+        _where_enr_ptr, _params_enr_ptr = _where_clause(filters, allowed_cols=_tbl_cols("uae_fact_enrollment"), table_name="uae_fact_enrollment")
         df_t = _q(f"SELECT {emirate_col} AS emirate, SUM({tch_cnt_col}) AS teachers "
                   f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{_where_tch_ptr} GROUP BY {emirate_col}",
                   [UAE_YEAR] + _params_tch_ptr)
@@ -1333,8 +1355,8 @@ def _uae_tab_performance(filters):
     avg_col      = _pick_col(sc_cols, "avg_score", "average_score", "mean_score", "score")
     em_sc_col    = _pick_col(sc_cols, "region_en", "emirate", "emirate_en", "region")
 
-    where_pf, params_pf = _where_clause(filters, allowed_cols=pf_cols)
-    where_sc, params_sc = _where_clause(filters, allowed_cols=sc_cols)
+    where_pf, params_pf = _where_clause(filters, allowed_cols=pf_cols, table_name="uae_fact_pass_fail")
+    where_sc, params_sc = _where_clause(filters, allowed_cols=sc_cols, table_name="uae_fact_student_scores")
 
     # Pass/Fail by emirate
     st.markdown('<div class="uae-section-header">📊 Pass / Fail by Emirate</div>', unsafe_allow_html=True)
@@ -1476,8 +1498,8 @@ def _uae_tab_demographics(filters):
     enr_cnt_col  = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
     nat_cat_col  = _pick_col(enr_cols, "nationality_cat", "nationality_category")
 
-    where_nat, params_nat = _where_clause(filters, allowed_cols=nat_cols)
-    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
+    where_nat, params_nat = _where_clause(filters, allowed_cols=nat_cols, table_name="uae_fact_student_nationalities")
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
 
     # Top 20 nationalities horizontal bar
     st.markdown('<div class="uae-section-header">🏅 Top 20 Student Nationalities in UAE Schools</div>', unsafe_allow_html=True)
@@ -1620,9 +1642,9 @@ def _uae_analytics_geo(filters):
     sch_em_col  = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
     tch_em_col  = _pick_col(tch_cols, "region_en", "emirate", "emirate_en", "region")
 
-    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
-    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols)
-    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols)
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
+    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
+    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
 
     # Metric selector (same as India)
     metric_choice = st.selectbox(
@@ -1748,9 +1770,9 @@ def _uae_analytics_perf(filters):
     fail_col    = _pick_col(pf_cols, "fail_count", "failed", "fail_students")
     pass_pct    = _pick_col(pf_cols, "pass_rate", "pass_percentage", "pct_pass")
 
-    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
-    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols)
-    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols)
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
+    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
+    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
 
     # State selector (Emirate filter for performance drill-down)
     emirate_list = _distinct("uae_fact_enrollment", emirate_col) if emirate_col else []
@@ -1802,7 +1824,7 @@ def _uae_analytics_perf(filters):
     # Avg scores by subject bar
     if subj_col and avg_col:
         st.markdown('<div class="uae-section-header">📖 Average Score by Subject</div>', unsafe_allow_html=True)
-        where_sc, params_sc = _where_clause(filters, allowed_cols=sc_cols)
+        where_sc, params_sc = _where_clause(filters, allowed_cols=sc_cols, table_name="uae_fact_student_scores")
         em_sc_col = _pick_col(sc_cols, "region_en", "emirate", "emirate_en", "region")
         q_where_sc = f" AND {em_sc_col} = %s" if sel_emirate != "All" and em_sc_col else ""
         df = _q(
@@ -1828,7 +1850,7 @@ def _uae_analytics_perf(filters):
     if pass_col or pass_pct:
         st.markdown('<div class="uae-section-header">✅ Pass Rate Summary</div>', unsafe_allow_html=True)
         pf_em_col = _pick_col(pf_cols, "region_en", "emirate", "emirate_en", "region")
-        where_pf, params_pf = _where_clause(filters, allowed_cols=pf_cols)
+        where_pf, params_pf = _where_clause(filters, allowed_cols=pf_cols, table_name="uae_fact_pass_fail")
         q_where_pf = f" AND {pf_em_col} = %s" if sel_emirate != "All" and pf_em_col else ""
         rate_expr = (f"ROUND(SUM({pass_col})*100.0/NULLIF(SUM({pass_col})+SUM({fail_col}),0),1)"
                      if pass_col and fail_col else f"AVG({pass_pct})")
@@ -2014,7 +2036,7 @@ def _uae_analytics_custom(filters):
     _enr_dim_labels = [d for d in sel_dims if dim_options[d][0] == "uae_fact_enrollment"]
     merge_col = _enr_dim_labels[0].lower().replace(' ', '_') if _enr_dim_labels else group_cols[0]
 
-    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols)
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
 
     select_parts = dim_cols.copy()
     need_students = ("Total Students" in sel_metrics or "PTR" in sel_metrics) and enr_cnt_col
@@ -2040,7 +2062,7 @@ def _uae_analytics_custom(filters):
     # Merge Schools data if needed
     sch_em_col2 = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
     if need_schools and sch_em_col2:
-        where_sch2, params_sch2 = _where_clause(filters, allowed_cols=sch_cols)
+        where_sch2, params_sch2 = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
         df_smerge = _q(
             f"SELECT {sch_em_col2} AS __dim__, SUM({sch_cnt_col}) AS total_schools "
             f"FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch2} "
@@ -2054,7 +2076,7 @@ def _uae_analytics_custom(filters):
     # Merge Teachers data if needed (Total Teachers or PTR)
     tch_em_col2 = _pick_col(tch_cols, "region_en", "emirate", "emirate_en", "region")
     if need_teachers and tch_em_col2:
-        where_tch2, params_tch2 = _where_clause(filters, allowed_cols=tch_cols)
+        where_tch2, params_tch2 = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
         df_tmerge = _q(
             f"SELECT {tch_em_col2} AS __dim__, SUM({tch_cnt_col}) AS total_teachers "
             f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch2} "
@@ -2121,3 +2143,4 @@ def _uae_analytics_custom(filters):
     _export_buttons(df, "custom_report")
 
 # UAE_FILTER_FRAMEWORK_FIX_v1
+\n# UAE_GENDER_SCOPE_FIX_v1\n
