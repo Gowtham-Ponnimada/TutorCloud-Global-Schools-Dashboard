@@ -55,10 +55,15 @@ enrollment_agg AS (
         region_en,
         education_type,
         SUM(student_count)                                              AS total_students,
-        SUM(CASE WHEN LOWER(gender) LIKE '%female%' OR LOWER(gender) LIKE '%بنات%'
-                 THEN student_count ELSE 0 END)                        AS female_students,
-        SUM(CASE WHEN LOWER(gender) LIKE '%male%'  OR LOWER(gender) LIKE '%بنين%'
-                 THEN student_count ELSE 0 END)                        AS male_students,
+        SUM(CASE
+                WHEN LOWER(BTRIM(COALESCE(gender,''))) IN ('female', 'بنات')
+                THEN student_count ELSE 0
+            END)                                                       AS female_students,
+        SUM(CASE
+                WHEN LOWER(BTRIM(COALESCE(gender,''))) IN ('male', 'بنين')
+                THEN student_count ELSE 0
+            END)                                                       AS male_students,
+        -- MV_GENDER_FIX_v4: exact gender match for enrollment
         SUM(CASE WHEN LOWER(COALESCE(nationality_cat,'')) LIKE '%emirati%'
                  OR LOWER(COALESCE(nationality_cat,'')) LIKE '%مواطن%'
                  THEN student_count ELSE 0 END)                        AS emirati_students,
@@ -77,10 +82,15 @@ teacher_agg AS (
         education_type,
         SUM(teacher_count)                                              AS total_teachers,
         SUM(staff_count)                                                AS total_staff,
-        SUM(CASE WHEN LOWER(gender) LIKE '%female%' OR LOWER(gender) LIKE '%بنات%'
-                 THEN teacher_count ELSE 0 END)                        AS female_teachers,
-        SUM(CASE WHEN LOWER(gender) LIKE '%male%'  OR LOWER(gender) LIKE '%بنين%'
-                 THEN teacher_count ELSE 0 END)                        AS male_teachers,
+        SUM(CASE
+                WHEN LOWER(BTRIM(COALESCE(gender,''))) IN ('female', 'بنات')
+                THEN teacher_count ELSE 0
+            END)                                                       AS female_teachers,
+        SUM(CASE
+                WHEN LOWER(BTRIM(COALESCE(gender,''))) IN ('male', 'بنين')
+                THEN teacher_count ELSE 0
+            END)                                                       AS male_teachers,
+        -- MV_GENDER_FIX_v4: exact gender match for teachers
         SUM(CASE WHEN LOWER(COALESCE(nationality_cat,'')) LIKE '%emirati%'
                  OR LOWER(COALESCE(nationality_cat,'')) LIKE '%مواطن%'
                  THEN teacher_count ELSE 0 END)                        AS emirati_teachers,
