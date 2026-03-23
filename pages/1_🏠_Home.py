@@ -60,9 +60,13 @@ if _render_rb:
     _render_rb()
 
 from utils.uae_page_renderer import render_uae_home
+from utils.us_page_renderer import render_us_home
 _current_region = st.session_state.get("selected_region", "India")
 if _current_region == "UAE":
     render_uae_home()
+    st.stop()
+elif _current_region == "United States":
+    render_us_home()
     st.stop()
 elif _current_region != "India":
     st.markdown(
@@ -766,3 +770,5 @@ st.markdown(
     "</div>",
     unsafe_allow_html=True
 )
+
+# US_DASHBOARD_SCAFFOLD_V1

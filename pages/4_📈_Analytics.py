@@ -57,9 +57,13 @@ if _render_rb:
     _render_rb()
 
 from utils.uae_page_renderer import render_uae_analytics
+from utils.us_page_renderer import render_us_analytics
 _current_region = st.session_state.get("selected_region", "India")
 if _current_region == "UAE":
     render_uae_analytics()
+    st.stop()
+elif _current_region == "United States":
+    render_us_analytics()
     st.stop()
 elif _current_region != "India":
     st.markdown(
@@ -695,3 +699,5 @@ st.markdown("""
     <p style='margin: 5px 0 0 0; color: #666; font-size: 0.95rem;'>© 2026 TutorCloud. All rights reserved.</p>
     </div>
     """, unsafe_allow_html=True)
+
+# US_DASHBOARD_SCAFFOLD_V1

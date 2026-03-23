@@ -1,0 +1,4 @@
+raw/
+extracted/
+manual_drop/*
+!manual_drop/.gitkeep
