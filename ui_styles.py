@@ -544,10 +544,10 @@ def render_region_badge():
     # Dedup: only render once per script run (Streamlit 1.54 does not raise
     # DuplicateWidgetID for repeated keys — so we guard with session_state).
     # app.py pops _badge_rendered at the start of every rerun.
-    if st.session_state.get("_badge_rendered", False):
-        return st.session_state.get("selected_region",
-               st.session_state.get("tc_region_selector", "India"))
-    st.session_state["_badge_rendered"] = True
+    # REGION_SIDEBAR_FIX_v1:
+    # Never return early here. The old global guard hid the sidebar Region
+    # selector on later page renders. We only dedupe the floating badge.
+    _badge_already_rendered = st.session_state.get("_badge_rendered", False)
 
 
     # -- 1. Sync session_state — session_state takes priority over query_params.
@@ -571,19 +571,21 @@ def render_region_badge():
     # -- 2. HTML display badge (top-right, fixed, read-only) -------------
     #   Pure HTML div via st.markdown -- no React transform ancestors
     #   -> position:fixed works (proven in v1-v3 badge).
-    st.markdown(
-        '<div style="'
-        'position:fixed;top:0.38rem;right:4.8rem;z-index:1000001;'
-        'background:linear-gradient(135deg,#FF9933 0%,#f5f5f5 50%,#138808 100%);'
-        'padding:5px 16px;border-radius:20px;'
-        'font-size:0.75rem;font-weight:700;color:#1a1a1a;'
-        'border:1px solid rgba(0,0,0,.12);'
-        'display:flex;align-items:center;gap:6px;'
-        'box-shadow:0 2px 10px rgba(0,0,0,.20);'
-        'pointer-events:none;user-select:none;white-space:nowrap;'
-        f'">&#127757;&nbsp;Region:&nbsp;<strong>{_cur}</strong></div>',
-        unsafe_allow_html=True,
-    )
+    if not _badge_already_rendered:
+        st.markdown(
+            '<div style="'
+            'position:fixed;top:0.38rem;right:4.8rem;z-index:1000001;'
+            'background:linear-gradient(135deg,#FF9933 0%,#f5f5f5 50%,#138808 100%);'
+            'padding:5px 16px;border-radius:20px;'
+            'font-size:0.75rem;font-weight:700;color:#1a1a1a;'
+            'border:1px solid rgba(0,0,0,.12);'
+            'display:flex;align-items:center;gap:6px;'
+            'box-shadow:0 2px 10px rgba(0,0,0,.20);'
+            'pointer-events:none;user-select:none;white-space:nowrap;'
+            f'">&#127757;&nbsp;Region:&nbsp;<strong>{_cur}</strong></div>',
+            unsafe_allow_html=True,
+        )
+        st.session_state["_badge_rendered"] = True
 
     # -- 3. Sidebar region selector (interactive, try/except dedup) ------
     #   try/except correctly handles 2nd+ calls per run without hiding
@@ -613,11 +615,11 @@ def render_region_badge():
             unsafe_allow_html=True,
         )
         _chosen = st.selectbox(
-            label='Region',
+            label='🌍 Region',
             options=_VALID_REGIONS,
             index=_VALID_REGIONS.index(_cur),
             key='tc_region_selector',
-            label_visibility='collapsed',
+            label_visibility='visible',
         )
 
     # -- 4. On change: Python-side query_params write + forced rerun -----
