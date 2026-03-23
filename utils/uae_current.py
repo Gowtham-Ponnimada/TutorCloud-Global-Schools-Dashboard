@@ -355,14 +355,34 @@ def _build_sidebar_filters() -> dict:
     try:
         enr_cols = _tbl_cols("uae_fact_enrollment")
         sch_cols = _tbl_cols("uae_fact_schools")
+        tch_cols = _tbl_cols("uae_fact_teachers_emirate")
         pf_cols  = _tbl_cols("uae_fact_pass_fail")
 
         emirate_col    = _pick_col(enr_cols, "region_en", "emirate", "emirate_en", "region")
         edu_type_col   = _pick_col(enr_cols, "education_type", "school_type", "edu_type", "type")
+        sch_edu_type_col = _pick_col(sch_cols, "education_type", "school_type", "edu_type", "type")
+        tch_edu_type_col = _pick_col(tch_cols, "education_type", "school_type", "edu_type", "type")
+        pf_edu_type_col  = _pick_col(pf_cols,  "education_type", "school_type", "edu_type", "type")
         gender_col     = _pick_col(enr_cols, "gender", "student_gender")
         nat_col        = _pick_col(enr_cols, "nationality_cat", "nationality_category", "nationality")
         cycle_col      = _pick_col(pf_cols,  "cycle", "education_cycle", "grade_level")
         curriculum_col = _pick_col(sch_cols, "curriculum_en", "curriculum", "curriculum_type")
+
+        def _union_distinct_year(table_col_pairs):
+            vals = []
+            seen = set()
+            for _tbl, _col in table_col_pairs:
+                if not _col:
+                    continue
+                try:
+                    for _v in _distinct(_tbl, _col):
+                        _s = str(_v).strip() if _v is not None else ""
+                        if _s and _s not in seen:
+                            seen.add(_s)
+                            vals.append(_s)
+                except Exception:
+                    pass
+            return sorted(vals, key=lambda x: x.lower())
 
         st.sidebar.markdown("### 🔍 Apply Filters")
 
@@ -381,7 +401,12 @@ def _build_sidebar_filters() -> dict:
 
         # ── Education Type (key changes with emirate to force reset) ──────────
         if edu_type_col:
-            opts = _distinct("uae_fact_enrollment", edu_type_col)
+            opts = _union_distinct_year([
+                ("uae_fact_enrollment", edu_type_col),
+                ("uae_fact_schools", sch_edu_type_col),
+                ("uae_fact_teachers_emirate", tch_edu_type_col),
+                ("uae_fact_pass_fail", pf_edu_type_col),
+            ])
             all_opts = ["All"] + [str(x) for x in opts if x]
             sel_edu = st.sidebar.selectbox(
                 "📚 Education Type",
@@ -389,7 +414,7 @@ def _build_sidebar_filters() -> dict:
                 index=0,
                 key=f"uae_edu_type_{sel_emirate}"
             )
-            filters["edu_type"] = {"col": edu_type_col, "val": sel_edu}
+            filters["education_type"] = {"col": edu_type_col, "val": sel_edu}
         else:
             sel_edu = "All"
 
@@ -459,7 +484,11 @@ def _build_sidebar_filters() -> dict:
                 pass  # non-fatal: cross-filter best-effort
 
         # ── Active filter summary ──────────────────────────────────────────────
-        active = [v["val"] for v in filters.values() if v["val"] != "All"]
+        active = [
+            v["val"]
+            for k, v in filters.items()
+            if not str(k).startswith("_") and v["val"] != "All"
+        ]
         if active:
             st.sidebar.markdown("---")
             st.sidebar.markdown("**✅ Active Filters**")
@@ -915,7 +944,11 @@ def render_uae_state_dashboard():
     if _curr_active:
         _curr_val  = filters["curriculum"]["val"]
         _emir_raw  = filters.get("emirate", {}).get("val") if "emirate" in filters else None
-        _edtyp_val = filters.get("education_type", {}).get("val") if "education_type" in filters else None
+        _edtyp_val = (
+            filters.get("education_type", {}).get("val")
+            if "education_type" in filters
+            else (filters.get("edu_type", {}).get("val") if "edu_type" in filters else None)
+        )
         _emir_val  = _emir_raw if _emir_raw and _emir_raw not in ("All", "") else None
         _scope_lbl = _emir_val.title() if _emir_val else "UAE"
 
@@ -1540,9 +1573,10 @@ def render_uae_analytics():
         unsafe_allow_html=True
     )
 
-    # UAE Analytics: no extra sidebar filters — only global Region selector
-    # (render_region_badge in ui_styles.py handles India/UAE switching)
-    filters = {}
+    # UAE_FILTER_FRAMEWORK_FIX_v1:
+    # Use the same UAE sidebar filters here as State Dashboard so
+    # analytics respects emirate / education type / curriculum selections.
+    filters = _build_sidebar_filters()
 
     tabs = st.tabs([
         "🗺️ Geographic Maps",
@@ -2085,3 +2119,5 @@ def _uae_analytics_custom(filters):
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     _export_buttons(df, "custom_report")
+
+# UAE_FILTER_FRAMEWORK_FIX_v1
