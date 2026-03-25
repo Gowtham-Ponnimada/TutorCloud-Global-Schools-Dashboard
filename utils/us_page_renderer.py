@@ -660,14 +660,96 @@ def render_us_state_dashboard():
     _render_footer()
 
 
+def _available_school_years() -> list[str]:
+    df = _q(
+        f"SELECT DISTINCT school_year FROM {SCHEMA}.dim_states WHERE school_year IS NOT NULL ORDER BY school_year DESC"
+    )
+    if df.empty:
+        return [DASHBOARD_YEAR]
+    years = [str(v) for v in df["school_year"].tolist() if str(v).strip() and str(v) != "None"]
+    return years or [DASHBOARD_YEAR]
+
+
+
+def _inject_analytics_parity_css():
+    st.markdown(
+        """
+        <style>
+            .breadcrumb-nav {
+                font-size: 0.92rem;
+                color: #667085;
+                margin-bottom: 0.25rem;
+            }
+            .breadcrumb-nav a {
+                color: #1F4E79;
+                text-decoration: none;
+                font-weight: 600;
+            }
+            .breadcrumb-nav span {
+                color: #475467;
+                font-weight: 600;
+            }
+            .main-header {
+                font-size: 2rem;
+                font-weight: 700;
+                color: #1F4E79;
+                margin-bottom: 0.2rem;
+                line-height: 1.2;
+            }
+            .sub-header {
+                font-size: 1rem;
+                color: #667085;
+                margin-bottom: 1.2rem;
+            }
+            [data-testid="stMetric"] {
+                background-color: white !important;
+                padding: 1.2rem !important;
+                border-radius: 12px !important;
+                border: 3px solid #1F4E79 !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+            }
+            [data-testid="stMetricValue"] {
+                font-size: 1.55rem !important;
+                font-weight: 700 !important;
+                color: #1F4E79 !important;
+            }
+            [data-testid="stMetricLabel"] {
+                font-size: 0.88rem !important;
+                font-weight: 600 !important;
+                color: #667085 !important;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_us_analytics():
     _inject_css()
+    _inject_analytics_parity_css()
     if not _phase1_ready():
         _render_missing_data_notice()
         return
 
-    st.markdown("<div class='us-title'>📈 US Analytics</div>", unsafe_allow_html=True)
-    st.markdown("<div class='us-subtitle'>Analytics and reporting using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
+    year_options = _available_school_years()
+    default_year_index = year_options.index(DASHBOARD_YEAR) if DASHBOARD_YEAR in year_options else 0
+
+    top_left, top_right = st.columns([4, 1.25])
+    with top_left:
+        st.markdown(
+            "<div class='breadcrumb-nav'><a href='/?region=United%20States' target='_self'>Home</a> / <span>Analytics</span></div>",
+            unsafe_allow_html=True,
+        )
+    with top_right:
+        selected_year = st.selectbox("Academic Year", year_options, index=default_year_index, key="us_analytics_year")
+
+    st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
+
+    if selected_year != DASHBOARD_YEAR:
+        st.info("US analytics is currently backed by the loaded 2024–2025 NCES dataset. Additional years will appear here after they are ingested.")
 
     tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
 
@@ -688,14 +770,29 @@ def render_us_analytics():
         perf_state = st.selectbox("Select State (All for National)", ["All"] + _states(), index=0, key="us_perf_state")
         perf_filters = {"state": perf_state, "districts": [], "school_levels": [], "charter": "All", "virtual": "All"}
         perf = _state_dashboard_kpis(perf_filters)
+
+        total_schools = float(perf.get("total_schools") or 0)
+        total_students = float(perf.get("total_students") or 0)
+        total_teachers = float(perf.get("total_teachers") or 0)
+        students_per_school = round(total_students / total_schools, 2) if total_schools > 0 else None
+        teachers_per_school = round(total_teachers / total_schools, 2) if total_schools > 0 else None
+
+        st.markdown("#### 📊 Key Performance Indicators")
         k1, k2, k3 = st.columns(3)
         k4, k5, k6 = st.columns(3)
-        k1.metric("TOTAL SCHOOLS", _fmt_int(perf.get("total_schools")))
-        k2.metric("SCHOOLS WITH ENROLLMENT", _fmt_int(perf.get("schools_with_enrollment")))
-        k3.metric("DISTRICTS", _fmt_int(perf.get("total_districts")))
+        k1.metric("Total Schools", _fmt_int(total_schools))
+        k2.metric("Total Students", _fmt_int(total_students))
+        k3.metric("Total Teachers", _fmt_int(total_teachers))
         k4.metric("PTR", _fmt_ptr(perf.get("ptr")))
-        k5.metric("TOTAL STUDENTS", _fmt_int(perf.get("total_students")))
-        k6.metric("TOTAL TEACHERS", _fmt_int(perf.get("total_teachers")))
+        k5.metric("Students per School", _fmt_float(students_per_school, 2))
+        k6.metric("Teachers per School", _fmt_float(teachers_per_school, 2))
+
+        aux1, aux2 = st.columns(2)
+        with aux1:
+            st.caption(f"Schools with Enrollment: {_fmt_int(perf.get('schools_with_enrollment'))}")
+        with aux2:
+            st.caption(f"Districts Covered: {_fmt_int(perf.get('total_districts'))}")
+
         perf_table = _district_kpi_table(perf_filters, 100) if perf_state != "All" else _state_metric_frame()
         st.dataframe(perf_table, use_container_width=True, hide_index=True)
         _export_buttons(perf_table, "us_performance_metrics_2024_2025")
@@ -754,3 +851,4 @@ def render_us_analytics():
             st.info("Select at least one dimension and one metric to generate a custom report.")
 
     _render_footer()
+
