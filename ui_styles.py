@@ -619,7 +619,7 @@ def render_region_badge():
             options=_VALID_REGIONS,
             index=_VALID_REGIONS.index(_cur),
             key='tc_region_selector',
-            label_visibility='visible',
+            label_visibility='collapsed',
         )
 
     # -- 4. On change: Python-side query_params write + forced rerun -----

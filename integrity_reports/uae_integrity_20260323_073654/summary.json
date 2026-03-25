@@ -1,0 +1,10 @@
+{
+  "year": "2024-2025",
+  "report_dir": "integrity_reports/uae_integrity_20260323_073654",
+  "base_cases": 95,
+  "gender_cases": 190,
+  "code_checks": 4,
+  "passes": 100,
+  "failures": 0,
+  "failure_types": {}
+}

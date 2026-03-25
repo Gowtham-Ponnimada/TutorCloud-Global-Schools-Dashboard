@@ -1,4 +1,14 @@
-from __future__ import annotations
+#!/usr/bin/env python3
+from pathlib import Path
+import shutil
+import textwrap
+import py_compile
+import sys
+
+ROOT = Path('/home/noagedevadmin/tutorcloud/tutorcloud-global-dashboard')
+TARGET = ROOT / 'utils' / 'us_page_renderer.py'
+
+RENDERER = r'''from __future__ import annotations
 
 import io
 import os
@@ -738,3 +748,33 @@ def render_us_analytics():
         "</div>",
         unsafe_allow_html=True,
     )
+'''
+
+
+def main() -> int:
+    if not TARGET.parent.exists():
+        print(f'ERROR: Target directory not found: {TARGET.parent}')
+        return 1
+
+    if TARGET.exists():
+        backup = TARGET.with_name('us_page_renderer.py.bak_india_parity_v1')
+        shutil.copy2(TARGET, backup)
+        print(f'Backup created: {backup}')
+
+    TARGET.write_text(textwrap.dedent(RENDERER), encoding='utf-8')
+
+    try:
+        py_compile.compile(str(TARGET), doraise=True)
+    except Exception as exc:
+        print('ERROR: Syntax validation failed for utils/us_page_renderer.py')
+        print(exc)
+        return 2
+
+    print('SUCCESS: India-parity US renderer written to utils/us_page_renderer.py')
+    print('Scope: layout/tabs/KPI order aligned to India; unsupported US fact metrics remain explicit as Directory only.')
+    print('Next: restart Streamlit and verify United States Home, State Dashboard, and Analytics pages.')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
