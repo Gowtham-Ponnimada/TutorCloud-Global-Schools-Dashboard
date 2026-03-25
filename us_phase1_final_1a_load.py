@@ -201,8 +201,8 @@ def build_marts(cur) -> None:
     state_staff AS (
         SELECT statename, st,
                MAX(CASE
-                   WHEN staff = 'Teachers, Prekindergarten through Grade 12'
-                    AND total_indicator = 'Category Set A'
+                   WHEN staff = 'Teachers'
+                    AND total_indicator = 'Derived - Major Staffing Category'
                    THEN NULLIF(staff_count,'')::numeric
                END) AS total_teachers
         FROM {SCHEMA}.{TABLE_MAP['sea_staff']}
@@ -237,8 +237,8 @@ def build_marts(cur) -> None:
     lea_staff AS (
         SELECT leaid,
                MAX(CASE
-                   WHEN staff = 'Teachers, Prekindergarten through Grade 12'
-                    AND total_indicator = 'Category Set A'
+                   WHEN staff = 'Teachers'
+                    AND total_indicator = 'Derived - Major Staffing Category'
                    THEN NULLIF(staff_count,'')::numeric
                END) AS total_teachers
         FROM {SCHEMA}.{TABLE_MAP['lea_staff']}
