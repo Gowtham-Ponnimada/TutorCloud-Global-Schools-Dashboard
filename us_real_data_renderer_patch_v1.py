@@ -1,4 +1,13 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path('/home/noagedevadmin/tutorcloud/tutorcloud-global-dashboard')
+TARGET = ROOT / 'utils' / 'us_page_renderer.py'
+
+RENDERER = r'''from __future__ import annotations
 
 import io
 import os
@@ -747,3 +756,24 @@ def render_us_analytics():
             _export_buttons(report_df, "us_custom_report_2024_2025")
         else:
             st.info("Select at least one dimension and one metric to generate a custom report.")
+'''
+
+
+def main() -> int:
+    if not ROOT.exists():
+        print(f'ERROR: repo root not found: {ROOT}')
+        return 1
+    if not TARGET.exists():
+        print(f'ERROR: target file not found: {TARGET}')
+        return 1
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup = TARGET.with_suffix(TARGET.suffix + f'.bak_{ts}')
+    backup.write_text(TARGET.read_text(encoding='utf-8'), encoding='utf-8')
+    TARGET.write_text(RENDERER, encoding='utf-8')
+    print(f'Backup created: {backup}')
+    print(f'Updated: {TARGET}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

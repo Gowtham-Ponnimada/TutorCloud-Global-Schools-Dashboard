@@ -178,3 +178,4 @@ dump.rdb
 *.ARCHIVED
 __pycache__/
 *.pyc
+data/us/final_1a_2024_2025/
