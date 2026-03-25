@@ -195,8 +195,6 @@ def _school_levels(state_name: str = "All") -> list[str]:
 
 def _build_sidebar_filters() -> dict:
     with st.sidebar:
-        st.markdown("## 🇺🇸 US Filters")
-        st.caption("NCES CCD Final v1a · 2024–2025 only")
         state_opts = ["All"] + _states()
         state = st.selectbox("State", state_opts, index=0, key="us_state")
         district_opts = _districts(state)
@@ -525,9 +523,15 @@ def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> 
     return _q(sql, params)
 
 
-def _render_data_quality_note():
+def _render_footer():
+    st.markdown("---")
     st.markdown(
-        "<div class='us-note'><strong>Data scope:</strong> US KPIs now use NCES CCD Final v1a for 2024–2025 only. Teacher and PTR coverage may vary in a few jurisdictions based on source submission quality, so state and district totals should be interpreted within NCES reporting limits.</div>",
+        """
+        <div style='text-align: center; padding: 20px; margin-top: 40px; border-top: 1px solid #e0e0e0;'>
+        <p style='margin: 0; color: #666; font-size: 0.95rem;'>TutorCloud Global Dashboard</p>
+        <p style='margin: 5px 0 0 0; color: #666; font-size: 0.95rem;'>© 2026 TutorCloud. All rights reserved.</p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -542,7 +546,6 @@ def render_us_home():
 
     st.markdown("<div class='us-title'>🇺🇸 United States Education Dashboard</div>", unsafe_allow_html=True)
     st.markdown("<div class='us-subtitle'>National K–12 overview using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
-    _render_data_quality_note()
 
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
@@ -601,6 +604,8 @@ def render_us_home():
             unsafe_allow_html=True,
         )
 
+    _render_footer()
+
 
 def render_us_state_dashboard():
     _inject_css()
@@ -612,7 +617,6 @@ def render_us_state_dashboard():
     title_state = filters.get("state") if filters.get("state") and filters.get("state") != "All" else "All States"
     st.markdown(f"<div class='us-title'>📊 US State Dashboard — {title_state}</div>", unsafe_allow_html=True)
     st.markdown("<div class='us-subtitle'>State and district analysis using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
-    _render_data_quality_note()
 
     k = _state_dashboard_kpis(filters)
     c1, c2, c3 = st.columns(3)
@@ -653,6 +657,8 @@ def render_us_state_dashboard():
         st.dataframe(directory_df, use_container_width=True, height=520, hide_index=True)
         _export_buttons(directory_df, "us_directory_extract_2024_2025")
 
+    _render_footer()
+
 
 def render_us_analytics():
     _inject_css()
@@ -662,7 +668,6 @@ def render_us_analytics():
 
     st.markdown("<div class='us-title'>📈 US Analytics</div>", unsafe_allow_html=True)
     st.markdown("<div class='us-subtitle'>Analytics and reporting using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
-    _render_data_quality_note()
 
     tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
 
@@ -747,3 +752,5 @@ def render_us_analytics():
             _export_buttons(report_df, "us_custom_report_2024_2025")
         else:
             st.info("Select at least one dimension and one metric to generate a custom report.")
+
+    _render_footer()
