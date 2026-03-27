@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -90,6 +91,71 @@ def _fmt_ptr(v) -> str:
         return f"{int(round(float(v)))}:1"
     except Exception:
         return "N/A"
+
+
+
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            ordered.append(item)
+    return ordered
+
+
+
+def _pretty_text_value(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if not isinstance(value, str):
+        return value
+    cleaned = " ".join(value.split())
+    if not cleaned:
+        return cleaned
+    if cleaned.isupper() and any(ch.isalpha() for ch in cleaned) and len(cleaned) > 3:
+        return cleaned.title()
+    return cleaned
+
+
+
+def _pretty_col_name(col: str) -> str:
+    name = str(col).replace("_", " ").strip().title()
+    replacements = {
+        "Ptr": "PTR",
+        "Uts": "UTs",
+        "Id": "ID",
+        "Zip": "ZIP",
+        "Nces": "NCES",
+        "Us": "US",
+        "Pk": "PK",
+        "Kg": "KG",
+    }
+    for old, new in replacements.items():
+        name = name.replace(old, new)
+    return name
+
+
+
+def _clean_dataframe(df: pd.DataFrame, columns: list[str] | None = None) -> pd.DataFrame:
+    if df is None:
+        return pd.DataFrame()
+    out = df.copy()
+    if columns is not None:
+        cols = [c for c in _dedupe_keep_order(columns) if c in out.columns]
+        out = out[cols]
+    out = out.loc[:, ~out.columns.duplicated()].copy()
+    for col in out.columns:
+        if out[col].dtype == object:
+            out[col] = out[col].map(_pretty_text_value)
+    out = out.rename(columns=lambda c: _pretty_col_name(c))
+    return out
+
+
+
+def _render_dataframe(df: pd.DataFrame, **kwargs):
+    display_df = _clean_dataframe(df)
+    _render_dataframe(display_df, **kwargs)
 
 
 def _inject_css():
@@ -252,18 +318,6 @@ def _build_sidebar_filters() -> dict:
         level_opts = _school_levels(state, district)
         school_levels = st.multiselect("School Category", level_opts, key="us_levels")
 
-        charter = st.selectbox("Charter", ["All", "Yes", "No"], index=0, key="us_charter")
-        virtual = st.selectbox(
-            "Virtual",
-            ["All"] + _distinct_values(
-                f"SELECT DISTINCT virtual_text FROM {SCHEMA}.dim_schools WHERE school_year = %s AND virtual_text IS NOT NULL ORDER BY virtual_text",
-                [DASHBOARD_YEAR],
-                "virtual_text",
-            ),
-            index=0,
-            key="us_virtual",
-        )
-
         return {
             "state": state,
             "district": district,
@@ -272,8 +326,6 @@ def _build_sidebar_filters() -> dict:
             "school_levels": school_levels,
             "school_types": school_types,
             "district_types": district_types,
-            "charter": charter,
-            "virtual": virtual,
         }
 
 
@@ -306,14 +358,6 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
             f"EXISTS (SELECT 1 FROM {SCHEMA}.dim_districts dd WHERE dd.school_year = {alias}.school_year AND dd.district_id = {alias}.district_id AND COALESCE(dd.lea_type_text, 'Unknown') = ANY(%s))"
         )
         params.append(district_types)
-    charter = filters.get("charter")
-    if charter and charter != "All":
-        clauses.append(f"COALESCE({alias}.charter_text, 'No') = %s")
-        params.append(charter)
-    virtual = filters.get("virtual")
-    if virtual and virtual != "All":
-        clauses.append(f"COALESCE({alias}.virtual_text, 'Not reported') = %s")
-        params.append(virtual)
     return " WHERE " + " AND ".join(clauses), params
 
 
@@ -325,10 +369,11 @@ def _export_buttons(
 ):
     if df is None or df.empty:
         return
-    csv_data = df.to_csv(index=False).encode("utf-8")
+    export_df = _clean_dataframe(df)
+    csv_data = export_df.to_csv(index=False).encode("utf-8")
     with io.BytesIO() as bio:
         with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
-            df.to_excel(writer, index=False, sheet_name="data")
+            export_df.to_excel(writer, index=False, sheet_name="data")
         xlsx_data = bio.getvalue()
     c1, c2 = st.columns(2)
     with c1:
@@ -347,8 +392,12 @@ def _plot_bar(df: pd.DataFrame, x: str, y: str, title: str, orientation: str = "
     if df is None or df.empty:
         st.info(f"No data available for {title}.")
         return
+    plot_df = df.copy()
+    for col in {x, y, color}:
+        if col and col in plot_df.columns and plot_df[col].dtype == object:
+            plot_df[col] = plot_df[col].map(_pretty_text_value)
     fig = px.bar(
-        df,
+        plot_df,
         x=x if orientation == "v" else y,
         y=y if orientation == "v" else x,
         orientation=orientation,
@@ -513,8 +562,7 @@ def _district_kpi_table(filters: dict, limit: int = 50) -> pd.DataFrame:
         clauses.append("state_name = %s")
         params.append(filters["state"])
     sql = f"""
-    SELECT district_name, total_schools, schools_with_enrollment, total_students, total_teachers, ptr,
-           free_lunch_qualified, reduced_price_qualified, direct_certification
+    SELECT district_name, total_schools, schools_with_enrollment, total_students, total_teachers, ptr
     FROM {SCHEMA}.vw_district_kpis_2024_2025
     WHERE {' AND '.join(clauses)}
     ORDER BY total_schools DESC NULLS LAST, district_name
@@ -567,13 +615,9 @@ def _directory_table(filters: dict, limit: int = 1000) -> pd.DataFrame:
         ds.school_level,
         ds.low_grade,
         ds.high_grade,
-        ds.charter_text,
-        ds.virtual_text,
         f.total_students,
         f.total_teachers,
-        f.ptr,
-        f.free_lunch_qualified,
-        f.reduced_price_qualified
+        f.ptr
     FROM {SCHEMA}.dim_schools ds
     LEFT JOIN {SCHEMA}.fact_school_totals f ON f.school_id = ds.school_id AND f.school_year = ds.school_year
     {where}
@@ -588,7 +632,7 @@ def _state_metric_frame(school_year: str = DASHBOARD_YEAR) -> pd.DataFrame:
         f"""
         SELECT state_name, total_schools, total_districts, total_students, total_teachers, ptr,
                CASE WHEN COALESCE(total_schools, 0) > 0 THEN ROUND(total_students::numeric / total_schools, 2) END AS students_per_school,
-               free_lunch_qualified, reduced_price_qualified, direct_certification, schools_with_enrollment
+               schools_with_enrollment
         FROM {SCHEMA}.vw_state_kpis_2024_2025
         WHERE school_year = %s
         ORDER BY state_name
@@ -696,7 +740,7 @@ def _comparison_frame(left_state: str, right_state: str) -> pd.DataFrame:
     return _q(
         f"""
         SELECT state_name, total_schools, total_districts, total_students, total_teachers, ptr,
-               schools_with_enrollment, free_lunch_qualified, reduced_price_qualified, direct_certification
+               schools_with_enrollment
         FROM {SCHEMA}.vw_state_kpis_2024_2025
         WHERE school_year = %s AND state_name = ANY(%s)
         ORDER BY state_name
@@ -709,7 +753,7 @@ def _district_comparison_frame(left_state: str, left_district: str, right_state:
     return _q(
         f"""
         SELECT state_name, district_name, total_schools, total_students, total_teachers, ptr,
-               schools_with_enrollment, free_lunch_qualified, reduced_price_qualified, direct_certification
+               schools_with_enrollment
         FROM {SCHEMA}.vw_district_kpis_2024_2025
         WHERE school_year = %s
           AND ((state_name = %s AND district_name = %s) OR (state_name = %s AND district_name = %s))
@@ -727,8 +771,6 @@ def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> 
         "School Type": ("ds.sch_type_text", "school_type"),
         "District Type": ("dd.lea_type_text", "district_type"),
         "School Category": ("ds.school_level", "school_category"),
-        "Charter": ("ds.charter_text", "charter_text"),
-        "Virtual": ("ds.virtual_text", "virtual_text"),
     }
     metric_map = {
         "Schools": "COUNT(DISTINCT ds.school_id) AS total_schools",
@@ -903,7 +945,7 @@ def render_us_state_dashboard():
         city_mix_df = _schools_by_city(filters)
         _plot_bar(city_mix_df, "city", "school_count", "Top Cities by School Count", orientation="h")
     if not enrollment_df.empty:
-        st.dataframe(
+        _render_dataframe(
             enrollment_df.rename(columns={"grade": "Grade", "total_students": "Total Students"}),
             use_container_width=True,
             hide_index=True,
@@ -936,7 +978,7 @@ def render_us_state_dashboard():
         display_district_df.columns = ["District", "Total Schools", "Total Students", "Total Teachers", "PTR"]
         if "PTR" in display_district_df.columns:
             display_district_df["PTR"] = display_district_df["PTR"].apply(_fmt_ptr)
-        st.dataframe(display_district_df, use_container_width=True, hide_index=True)
+        _render_dataframe(display_district_df, use_container_width=True, hide_index=True)
         _export_buttons(display_district_df, "us_district_kpis_2024_2025")
     else:
         st.info("No district-level data available for the selected filters.")
@@ -968,7 +1010,7 @@ def render_us_state_dashboard():
             display_city_df.columns = ["City", "Total Schools", "Total Students", "Total Teachers", "PTR"]
             if "PTR" in display_city_df.columns:
                 display_city_df["PTR"] = display_city_df["PTR"].apply(_fmt_ptr)
-            st.dataframe(display_city_df, use_container_width=True, hide_index=True)
+            _render_dataframe(display_city_df, use_container_width=True, hide_index=True)
             _export_buttons(display_city_df, "us_city_kpis_2024_2025")
         else:
             st.info("No city-level data available for the selected district.")
@@ -976,7 +1018,7 @@ def render_us_state_dashboard():
     st.markdown("### 🏫 School Directory")
     mix = _school_level_mix(filters)
     if not mix.empty:
-        st.dataframe(
+        _render_dataframe(
             mix.rename(columns={"school_level": "School Level", "school_count": "School Count"}),
             use_container_width=True,
             hide_index=True,
@@ -984,7 +1026,7 @@ def render_us_state_dashboard():
         _export_buttons(mix, "us_school_level_mix_2024_2025")
 
     directory_df = _directory_table(filters, 1000)
-    st.dataframe(directory_df, use_container_width=True, height=520, hide_index=True)
+    _render_dataframe(directory_df, use_container_width=True, height=520, hide_index=True)
     _export_buttons(directory_df, "us_directory_extract_2024_2025")
 
     _render_footer()
@@ -1163,9 +1205,9 @@ def render_us_analytics():
             )
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-            display_cols = [c for c in [location_col, "state_name", "county_name", "district_name", "total_schools", "total_students", "total_teachers", "students_per_school", "ptr"] if c in df_map.columns]
-            st.dataframe(df_map[display_cols], use_container_width=True, hide_index=True)
-            _export_buttons(df_map, export_prefix)
+            display_cols = _dedupe_keep_order([c for c in [location_col, "state_name", "county_name", "district_name", "total_schools", "total_students", "total_teachers", "students_per_school", "ptr"] if c in df_map.columns])
+            _render_dataframe(df_map[display_cols], use_container_width=True, hide_index=True)
+            _export_buttons(df_map[display_cols], export_prefix)
 
     with tabs[1]:
         perf_state = st.selectbox("Select State (All for National)", ["All"] + _states(), index=0, key="us_perf_state")
@@ -1195,7 +1237,7 @@ def render_us_analytics():
             st.caption(f"Districts Covered: {_fmt_int(perf.get('total_districts'))}")
 
         perf_table = _district_kpi_table(perf_filters, 100) if perf_state != "All" else _state_metric_frame()
-        st.dataframe(perf_table, use_container_width=True, hide_index=True)
+        _render_dataframe(perf_table, use_container_width=True, hide_index=True)
         _export_buttons(perf_table, "us_performance_metrics_2024_2025")
 
     with tabs[2]:
@@ -1218,19 +1260,19 @@ def render_us_analytics():
                 right_state = st.selectbox("State B", states, index=1 if len(states) > 1 else 0, key="us_cmp_d_b_state")
                 right_district = st.selectbox("District B", _districts(right_state), key="us_cmp_d_b")
             cmp_df = _district_comparison_frame(left_state, left_district, right_state, right_district)
-        st.dataframe(cmp_df, use_container_width=True, hide_index=True)
+        _render_dataframe(cmp_df, use_container_width=True, hide_index=True)
         _export_buttons(cmp_df, "us_comparison_2024_2025", csv_label="📥 Download Comparison CSV", excel_label="📊 Download Excel")
 
     with tabs[3]:
         st.markdown("#### 📝 Custom Reports")
         dimensions = st.multiselect(
-            "Choose dimensions",
-            ["State", "District", "Location (City)", "School Type", "District Type", "School Category", "Charter", "Virtual"],
+            "Choose Dimensions",
+            ["State", "District", "Location (City)", "School Type", "District Type", "School Category"],
             default=["State"],
             key="us_report_dims",
         )
         metrics = st.multiselect(
-            "Choose metrics",
+            "Choose Metrics",
             ["Schools", "Students", "Teachers", "PTR", "Students/School"],
             default=["Schools", "Students", "PTR"],
             key="us_report_metrics",
@@ -1242,12 +1284,10 @@ def render_us_analytics():
             "state": report_state,
             "districts": report_districts,
             "school_levels": report_levels,
-            "charter": "All",
-            "virtual": "All",
         }
         if dimensions and metrics:
             report_df = _custom_report(dimensions, metrics, report_filters)
-            st.dataframe(report_df, use_container_width=True, height=520, hide_index=True)
+            _render_dataframe(report_df, use_container_width=True, height=520, hide_index=True)
             _export_buttons(report_df, "us_custom_report_2024_2025", csv_label="📥 Download CSV", excel_label="📊 Download Excel")
         else:
             st.info("Select at least one dimension and one metric to generate a custom report.")
