@@ -317,7 +317,12 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
     return " WHERE " + " AND ".join(clauses), params
 
 
-def _export_buttons(df: pd.DataFrame, prefix: str):
+def _export_buttons(
+    df: pd.DataFrame,
+    prefix: str,
+    csv_label: str = "📥 Download CSV",
+    excel_label: str = "📊 Download Excel",
+):
     if df is None or df.empty:
         return
     csv_data = df.to_csv(index=False).encode("utf-8")
@@ -327,10 +332,10 @@ def _export_buttons(df: pd.DataFrame, prefix: str):
         xlsx_data = bio.getvalue()
     c1, c2 = st.columns(2)
     with c1:
-        st.download_button("⬇️ Export CSV", csv_data, f"{prefix}.csv", "text/csv", use_container_width=True)
+        st.download_button(csv_label, csv_data, f"{prefix}.csv", "text/csv", use_container_width=True)
     with c2:
         st.download_button(
-            "⬇️ Export Excel",
+            excel_label,
             xlsx_data,
             f"{prefix}.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -718,20 +723,19 @@ def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> 
     dim_map = {
         "State": ("ds.state_name", "state_name"),
         "District": ("ds.district_name", "district_name"),
-        "City": ("ds.city", "city"),
-        "School Level": ("ds.school_level", "school_level"),
+        "Location (City)": ("ds.city", "city"),
+        "School Type": ("ds.sch_type_text", "school_type"),
+        "District Type": ("dd.lea_type_text", "district_type"),
+        "School Category": ("ds.school_level", "school_category"),
         "Charter": ("ds.charter_text", "charter_text"),
         "Virtual": ("ds.virtual_text", "virtual_text"),
     }
     metric_map = {
         "Schools": "COUNT(DISTINCT ds.school_id) AS total_schools",
-        "Schools with Enrollment": "COUNT(DISTINCT CASE WHEN f.total_students IS NOT NULL THEN ds.school_id END) AS schools_with_enrollment",
         "Students": "COALESCE(SUM(f.total_students), 0) AS total_students",
         "Teachers": "COALESCE(SUM(f.total_teachers), 0) AS total_teachers",
         "PTR": "CASE WHEN COALESCE(SUM(f.total_teachers), 0) > 0 THEN ROUND(SUM(f.total_students) / SUM(f.total_teachers), 2) END AS ptr",
-        "Free Lunch": "COALESCE(SUM(f.free_lunch_qualified), 0) AS free_lunch_qualified",
-        "Reduced Price": "COALESCE(SUM(f.reduced_price_qualified), 0) AS reduced_price_qualified",
-        "Direct Certification": "COALESCE(SUM(f.direct_certification), 0) AS direct_certification",
+        "Students/School": "CASE WHEN COUNT(DISTINCT ds.school_id) > 0 THEN ROUND(SUM(f.total_students) / COUNT(DISTINCT ds.school_id), 2) END AS students_per_school",
     }
     selected_dims = [dim_map[d] for d in dimensions if d in dim_map]
     if not selected_dims:
@@ -747,6 +751,7 @@ def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> 
     SELECT {select_dims}, {select_metrics}
     FROM {SCHEMA}.dim_schools ds
     LEFT JOIN {SCHEMA}.fact_school_totals f ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    LEFT JOIN {SCHEMA}.dim_districts dd ON dd.district_id = ds.district_id AND dd.school_year = ds.school_year
     {where}
     GROUP BY {group_expr}
     ORDER BY 1, 2, 3
@@ -781,7 +786,7 @@ def render_us_home():
 
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL STATES/JURISDICTIONS", _fmt_int(summary.get("total_states")))
+    c1.metric("TOTAL STATES/UTs", _fmt_int(summary.get("total_states")))
     c2.metric("TOTAL SCHOOLS", _fmt_int(summary.get("total_schools")))
     c3.metric("TOTAL STUDENTS", _fmt_int(summary.get("total_students")))
     c4.metric("TOTAL TEACHERS", _fmt_int(summary.get("total_teachers")))
@@ -1214,24 +1219,25 @@ def render_us_analytics():
                 right_district = st.selectbox("District B", _districts(right_state), key="us_cmp_d_b")
             cmp_df = _district_comparison_frame(left_state, left_district, right_state, right_district)
         st.dataframe(cmp_df, use_container_width=True, hide_index=True)
-        _export_buttons(cmp_df, "us_comparison_2024_2025")
+        _export_buttons(cmp_df, "us_comparison_2024_2025", csv_label="📥 Download Comparison CSV", excel_label="📊 Download Excel")
 
     with tabs[3]:
+        st.markdown("#### 📝 Custom Reports")
         dimensions = st.multiselect(
-            "Choose grouping dimensions",
-            ["State", "District", "City", "School Level", "Charter", "Virtual"],
+            "Choose dimensions",
+            ["State", "District", "Location (City)", "School Type", "District Type", "School Category", "Charter", "Virtual"],
             default=["State"],
             key="us_report_dims",
         )
         metrics = st.multiselect(
-            "Choose metrics to include",
-            ["Schools", "Schools with Enrollment", "Students", "Teachers", "PTR", "Free Lunch", "Reduced Price", "Direct Certification"],
+            "Choose metrics",
+            ["Schools", "Students", "Teachers", "PTR", "Students/School"],
             default=["Schools", "Students", "PTR"],
             key="us_report_metrics",
         )
-        report_state = st.selectbox("Filter report by state", ["All"] + _states(), index=0, key="us_report_state")
-        report_districts = st.multiselect("Filter report by district", _districts(report_state), key="us_report_districts")
-        report_levels = st.multiselect("Filter report by school level", _school_levels(report_state), key="us_report_levels")
+        report_state = st.selectbox("Filter by State", ["All"] + _states(), index=0, key="us_report_state")
+        report_districts = st.multiselect("Filter by District", _districts(report_state), key="us_report_districts")
+        report_levels = st.multiselect("Filter by School Category", _school_levels(report_state), key="us_report_levels")
         report_filters = {
             "state": report_state,
             "districts": report_districts,
@@ -1242,7 +1248,7 @@ def render_us_analytics():
         if dimensions and metrics:
             report_df = _custom_report(dimensions, metrics, report_filters)
             st.dataframe(report_df, use_container_width=True, height=520, hide_index=True)
-            _export_buttons(report_df, "us_custom_report_2024_2025")
+            _export_buttons(report_df, "us_custom_report_2024_2025", csv_label="📥 Download CSV", excel_label="📊 Download Excel")
         else:
             st.info("Select at least one dimension and one metric to generate a custom report.")
 
