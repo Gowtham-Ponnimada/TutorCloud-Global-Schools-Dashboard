@@ -155,7 +155,16 @@ def _clean_dataframe(df: pd.DataFrame, columns: list[str] | None = None) -> pd.D
 
 def _render_dataframe(df: pd.DataFrame, **kwargs):
     display_df = _clean_dataframe(df)
-    _render_dataframe(display_df, **kwargs)
+    try:
+        st.dataframe(display_df, **kwargs)
+    except Exception:
+        fallback_df = display_df.copy()
+        fallback_df = fallback_df.loc[:, ~fallback_df.columns.duplicated()].copy()
+        for col in fallback_df.columns:
+            fallback_df[col] = fallback_df[col].map(
+                lambda v: float(v) if isinstance(v, Decimal) else _pretty_text_value(v)
+            )
+        st.dataframe(fallback_df, **kwargs)
 
 
 def _inject_css():
