@@ -296,6 +296,20 @@ def _school_types(state_name: str = "All", district_name: str = "All") -> list[s
 
 
 
+def _delivery_models(state_name: str = "All", district_name: str = "All") -> list[str]:
+    clauses = ["school_year = %s", "delivery_model IS NOT NULL", "BTRIM(delivery_model) <> ''"]
+    params: list = [DASHBOARD_YEAR]
+    if state_name and state_name != "All":
+        clauses.append("state_name = %s")
+        params.append(state_name)
+    if district_name and district_name != "All":
+        clauses.append("district_name = %s")
+        params.append(district_name)
+    sql = f"SELECT DISTINCT delivery_model FROM {SCHEMA}.dim_schools WHERE {' AND '.join(clauses)} ORDER BY delivery_model"
+    return _distinct_values(sql, params, "delivery_model")
+
+
+
 def _district_types(state_name: str = "All") -> list[str]:
     clauses = ["school_year = %s", "lea_type_text IS NOT NULL", "BTRIM(lea_type_text) <> ''"]
     params: list = [DASHBOARD_YEAR]
@@ -318,8 +332,11 @@ def _build_sidebar_filters() -> dict:
         city_opts = _cities(state, district)
         cities = st.multiselect("Select City", city_opts, key="us_cities")
 
+        delivery_opts = ["All"] + _delivery_models(state, district)
+        delivery_model = st.selectbox("School Type", delivery_opts, index=0, key="us_delivery_model")
+
         school_type_opts = _school_types(state, district)
-        school_types = st.multiselect("School Type", school_type_opts, key="us_school_types")
+        school_types = st.multiselect("Institution Type", school_type_opts, key="us_school_types")
 
         district_type_opts = _district_types(state)
         district_types = st.multiselect("District Type", district_type_opts, key="us_district_types")
@@ -332,6 +349,7 @@ def _build_sidebar_filters() -> dict:
             "district": district,
             "districts": [district] if district != "All" else [],
             "cities": cities,
+            "delivery_model": delivery_model,
             "school_levels": school_levels,
             "school_types": school_types,
             "district_types": district_types,
@@ -353,6 +371,10 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
     if cities:
         clauses.append(f"{alias}.city = ANY(%s)")
         params.append(cities)
+    delivery_model = filters.get("delivery_model")
+    if delivery_model and delivery_model != "All":
+        clauses.append(f"COALESCE({alias}.delivery_model, 'Unknown') = %s")
+        params.append(delivery_model)
     levels = [x for x in (filters.get("school_levels") or []) if x]
     if levels:
         clauses.append(f"{alias}.school_level = ANY(%s)")
@@ -777,7 +799,8 @@ def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> 
         "State": ("ds.state_name", "state_name"),
         "District": ("ds.district_name", "district_name"),
         "Location (City)": ("ds.city", "city"),
-        "School Type": ("ds.sch_type_text", "school_type"),
+        "School Type": ("ds.delivery_model", "school_type"),
+        "Institution Type": ("ds.sch_type_text", "institution_type"),
         "District Type": ("dd.lea_type_text", "district_type"),
         "School Category": ("ds.school_level", "school_category"),
     }
@@ -1220,7 +1243,8 @@ def render_us_analytics():
 
     with tabs[1]:
         perf_state = st.selectbox("Select State (All for National)", ["All"] + _states(), index=0, key="us_perf_state")
-        perf_filters = {"state": perf_state, "districts": [], "school_levels": [], "charter": "All", "virtual": "All"}
+        perf_delivery_model = st.selectbox("School Type", ["All"] + _delivery_models(perf_state), index=0, key="us_perf_delivery_model")
+        perf_filters = {"state": perf_state, "districts": [], "school_levels": [], "delivery_model": perf_delivery_model}
         perf = _state_dashboard_kpis(perf_filters)
 
         total_schools = float(perf.get("total_schools") or 0)
@@ -1276,7 +1300,7 @@ def render_us_analytics():
         st.markdown("#### 📝 Custom Reports")
         dimensions = st.multiselect(
             "Choose Dimensions",
-            ["State", "District", "Location (City)", "School Type", "District Type", "School Category"],
+            ["State", "District", "Location (City)", "School Type", "Institution Type", "District Type", "School Category"],
             default=["State"],
             key="us_report_dims",
         )
@@ -1287,10 +1311,12 @@ def render_us_analytics():
             key="us_report_metrics",
         )
         report_state = st.selectbox("Filter by State", ["All"] + _states(), index=0, key="us_report_state")
+        report_delivery_model = st.selectbox("Filter by School Type", ["All"] + _delivery_models(report_state), index=0, key="us_report_delivery_model")
         report_districts = st.multiselect("Filter by District", _districts(report_state), key="us_report_districts")
         report_levels = st.multiselect("Filter by School Category", _school_levels(report_state), key="us_report_levels")
         report_filters = {
             "state": report_state,
+            "delivery_model": report_delivery_model,
             "districts": report_districts,
             "school_levels": report_levels,
         }
