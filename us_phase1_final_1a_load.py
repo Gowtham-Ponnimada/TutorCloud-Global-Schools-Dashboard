@@ -304,13 +304,10 @@ def build_marts(cur) -> None:
         c.virtual_text,
         CASE
             WHEN c.virtual_text IS NULL OR BTRIM(c.virtual_text) = '' THEN 'Unknown'
-            WHEN LOWER(c.virtual_text) LIKE '%not virtual%' THEN 'Brick & Mortar'
-            WHEN LOWER(c.virtual_text) LIKE '%fully virtual%' THEN 'Virtual'
-            WHEN LOWER(c.virtual_text) LIKE '%exclusively virtual%' THEN 'Virtual'
-            WHEN LOWER(c.virtual_text) LIKE '%face-to-face%' THEN 'Both'
-            WHEN LOWER(c.virtual_text) LIKE '%hybrid%' THEN 'Both'
-            WHEN LOWER(c.virtual_text) LIKE '%both%' THEN 'Both'
-            WHEN LOWER(c.virtual_text) LIKE '%virtual%' THEN 'Virtual'
+            WHEN LOWER(BTRIM(c.virtual_text)) = 'no virtual instruction' THEN 'Brick & Mortar'
+            WHEN LOWER(BTRIM(c.virtual_text)) = 'supplemental virtual' THEN 'Both'
+            WHEN LOWER(BTRIM(c.virtual_text)) IN ('exclusively virtual', 'primarily virtual') THEN 'Virtual'
+            WHEN LOWER(BTRIM(c.virtual_text)) IN ('missing', 'not reported') THEN 'Unknown'
             ELSE 'Unknown'
         END AS delivery_model,
         now() AS created_at
