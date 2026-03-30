@@ -587,22 +587,29 @@ def _grade_gender_enrollment(filters: dict) -> pd.DataFrame:
 
 
 def _district_kpi_table(filters: dict, limit: int = 50) -> pd.DataFrame:
-    params: list = [DASHBOARD_YEAR]
-    clauses = ["school_year = %s"]
-    if filters.get("state") and filters["state"] != "All":
-        clauses.append("state_name = %s")
-        params.append(filters["state"])
+    where, params = _base_where(filters, "ds")
+    params = params + [limit]
     sql = f"""
-    SELECT district_name, total_schools, schools_with_enrollment, total_students, total_teachers, ptr
-    FROM {SCHEMA}.vw_district_kpis_2024_2025
-    WHERE {' AND '.join(clauses)}
+    SELECT
+        COALESCE(ds.district_name, 'Unknown') AS district_name,
+        COUNT(DISTINCT ds.school_id) AS total_schools,
+        COUNT(DISTINCT CASE WHEN f.total_students IS NOT NULL THEN ds.school_id END) AS schools_with_enrollment,
+        COALESCE(SUM(f.total_students), 0) AS total_students,
+        COALESCE(SUM(f.total_teachers), 0) AS total_teachers,
+        CASE
+            WHEN COALESCE(SUM(f.total_teachers), 0) > 0
+            THEN ROUND(SUM(f.total_students)::numeric / SUM(f.total_teachers), 2)
+        END AS ptr
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id
+     AND f.school_year = ds.school_year
+    {where}
+    GROUP BY 1
     ORDER BY total_schools DESC NULLS LAST, district_name
     LIMIT %s
     """
-    params.append(limit)
     return _q(sql, params)
-
-
 
 def _city_kpi_table(filters: dict, limit: int = 100) -> pd.DataFrame:
     where, params = _base_where(filters, "ds")
