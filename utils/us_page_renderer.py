@@ -405,6 +405,14 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
     if management_type and management_type != "All":
         clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
         params.append(management_type)
+    management_type = filters.get("management_type")
+    if management_type and management_type != "All":
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(management_type)
+    management_type = filters.get("management_type")
+    if management_type and management_type != "All":
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(management_type)
     levels = [x for x in (filters.get("school_levels") or []) if x]
     if levels:
         clauses.append(f"{alias}.school_level = ANY(%s)")
@@ -1242,7 +1250,7 @@ def render_us_analytics():
 
         if df_map.empty:
             if level_choice == "County":
-                st.warning("County-level metrics are unavailable because the preserved NCES school directory staging table or county column could not be found.")
+                st.warning("County-level metrics are unavailable because county_name is not yet populated in us.dim_schools for the selected data.")
             else:
                 st.info("No data available for the selected geographic level.")
         else:
@@ -1743,3 +1751,49 @@ def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> 
     '''
     return _q(sql, params)
 # ===== end Build 3 weighted private metrics override =====
+
+
+
+# ===== Build 4 county_name override =====
+def _county_metric_frame(state_name: str = "All", school_year: str = DASHBOARD_YEAR) -> pd.DataFrame:
+    params: list = [school_year]
+    clauses = [
+        "ds.school_year = %s",
+        "NULLIF(BTRIM(COALESCE(ds.county_name::text, '')), '') IS NOT NULL"
+    ]
+    if state_name and state_name != "All":
+        clauses.append("ds.state_name = %s")
+        params.append(state_name)
+
+    county_expr = "COALESCE(NULLIF(BTRIM(ds.county_name::text), ''), 'Unknown')"
+    location_expr = county_expr if state_name != "All" else f"{county_expr} || ', ' || ds.state_name"
+
+    try:
+        school_sum = _weighted_school_sum_raw("ds")
+        student_sum = _weighted_students_sum_raw("ds", "f")
+        teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    except Exception:
+        school_sum = "COUNT(DISTINCT ds.school_id)"
+        student_sum = "COALESCE(SUM(f.total_students), 0)"
+        teacher_sum = "COALESCE(SUM(f.total_teachers), 0)"
+
+    sql = f"""
+    SELECT
+        ds.state_name,
+        {county_expr} AS county_name,
+        {location_expr} AS location_name,
+        ROUND({school_sum}, 0) AS total_schools,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr,
+        CASE WHEN COALESCE({school_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({school_sum}, 0), 2) END AS students_per_school
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    WHERE {' AND '.join(clauses)}
+    GROUP BY 1, 2, 3
+    HAVING ROUND({school_sum}, 0) > 0
+    ORDER BY total_schools DESC NULLS LAST, location_name
+    """
+    return _q(sql, params)
+# ===== end Build 4 county_name override =====

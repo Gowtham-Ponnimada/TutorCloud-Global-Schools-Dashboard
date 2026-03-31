@@ -51,6 +51,11 @@ TABLE_MAP = {
     'sea_staff': f'stg_sea_staff_raw_{YEAR_TAG}',
 }
 
+GEO_URL = 'https://data-nces.opendata.arcgis.com/api/download/v1/items/a15e8731a17a46aabc452ea607f172c0/csv?layers=0'
+GEO_TABLE = f'stg_sch_geo_{YEAR_TAG}'
+TABLE_MAP['sch_geo'] = GEO_TABLE
+
+
 
 def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -172,6 +177,35 @@ def load_stage_table(cur, key: str, csv_path: Path) -> dict:
 
 
 def build_marts(cur) -> None:
+    geo_join_col = None
+    geo_county_col = None
+    if 'sch_geo' in TABLE_MAP:
+        try:
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s AND table_name = %s
+                ORDER BY ordinal_position
+                """,
+                [SCHEMA, TABLE_MAP['sch_geo']]
+            )
+            geo_cols = {str(r[0]).lower() for r in cur.fetchall()}
+            for c in ['ncessch', 'school_identification_number', 'nces_school_id', 'ncesid', 'school_id', 'schoolid', 'id']:
+                if c in geo_cols:
+                    geo_join_col = c
+                    break
+            for c in ['nmcnty', 'county_name', 'county', 'coname', 'countyname', 'nmcnty15', 'cntyname']:
+                if c in geo_cols:
+                    geo_county_col = c
+                    break
+        except Exception:
+            geo_join_col = None
+            geo_county_col = None
+
+    geo_select = f"g.{geo_county_col} AS county_name," if geo_join_col and geo_county_col else "NULL::text AS county_name,"
+    geo_join = f"LEFT JOIN {SCHEMA}.{TABLE_MAP['sch_geo']} g ON BTRIM(COALESCE(g.{geo_join_col}::text, '')) = BTRIM(COALESCE(d.ncessch::text, ''))" if geo_join_col and geo_county_col else ""
+
     sql_text = f"""
     DROP VIEW IF EXISTS {SCHEMA}.vw_dashboard_readiness CASCADE;
     DROP VIEW IF EXISTS {SCHEMA}.vw_state_kpis_2024_2025 CASCADE;
@@ -286,6 +320,7 @@ def build_marts(cur) -> None:
         d.mcity AS city,
         d.mstate AS mailing_state,
         d.mzip AS zip_code,
+        {geo_select}
         d.phone,
         d.website,
         d.sy_status,
@@ -318,6 +353,7 @@ def build_marts(cur) -> None:
     FROM {SCHEMA}.{TABLE_MAP['sch_directory']} d
     LEFT JOIN {SCHEMA}.{TABLE_MAP['sch_characteristics']} c
       ON c.school_year = d.school_year AND c.ncessch = d.ncessch
+    {geo_join}
     WHERE d.school_year = '{DASHBOARD_YEAR}';
 
     CREATE TABLE {SCHEMA}.fact_school_totals AS
@@ -466,6 +502,8 @@ def main() -> int:
 
     extracted_csvs = {}
     for key in TABLE_MAP:
+        if key == 'sch_geo':
+            continue
         zip_path = Path(manifest[key]['path'])
         out_dir = dirs['extracted'] / key
         files = unzip_file(zip_path, out_dir)
@@ -490,6 +528,13 @@ def main() -> int:
                 log(f'Loading staging table for {key} ...')
                 report['staging'][key] = load_stage_table(cur, key, csv_path)
                 conn.commit()
+
+            geo_target = dirs['raw'] / f'edge_public_school_locations_{YEAR_TAG}.csv'
+            download(GEO_URL, geo_target)
+            manifest['sch_geo'] = {'url': GEO_URL, 'path': str(geo_target), 'size_bytes': geo_target.stat().st_size}
+            log('Loading staging table for sch_geo ...')
+            report['staging']['sch_geo'] = load_stage_table(cur, 'sch_geo', geo_target)
+            conn.commit()
             log('Building marts and views ...')
             build_marts(cur)
             conn.commit()
