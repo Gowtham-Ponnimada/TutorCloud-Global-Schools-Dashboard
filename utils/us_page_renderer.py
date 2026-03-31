@@ -413,6 +413,10 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
     if management_type and management_type != "All":
         clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
         params.append(management_type)
+    management_type = filters.get("management_type")
+    if management_type and management_type != "All":
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(management_type)
     levels = [x for x in (filters.get("school_levels") or []) if x]
     if levels:
         clauses.append(f"{alias}.school_level = ANY(%s)")
@@ -748,25 +752,18 @@ def _first_existing_column(table_name: str, candidates: list[str]) -> str | None
 
 
 def _county_metric_frame(state_name: str = "All", school_year: str = DASHBOARD_YEAR) -> pd.DataFrame:
-    stage_table = f"stg_sch_directory_{_year_tag(school_year)}"
-    county_col = _first_existing_column(stage_table, ["county_name", "coname", "county", "countyname", "county15", "coname15"])
-    school_id_col = _first_existing_column(stage_table, ["ncessch", "school_id", "schoolid", "nces_id"])
-    if not county_col or not school_id_col:
-        return pd.DataFrame()
-
-    county_expr = f"COALESCE(NULLIF(BTRIM(sd.{county_col}::text), ''), 'Unknown')"
-    location_expr = county_expr if state_name != "All" else f"{county_expr} || ', ' || ds.state_name"
-
     params: list = [school_year]
-    where = ["ds.school_year = %s"]
+    where = ["ds.school_year = %s", "NULLIF(BTRIM(ds.county_name), '') IS NOT NULL"]
     if state_name and state_name != "All":
         where.append("ds.state_name = %s")
         params.append(state_name)
 
+    location_expr = "ds.county_name" if state_name != "All" else "ds.county_name || ', ' || ds.state_name"
+
     sql = f"""
     SELECT
         ds.state_name,
-        {county_expr} AS county_name,
+        ds.county_name,
         {location_expr} AS location_name,
         COUNT(DISTINCT ds.school_id) AS total_schools,
         COALESCE(SUM(f.total_students), 0) AS total_students,
@@ -776,15 +773,12 @@ def _county_metric_frame(state_name: str = "All", school_year: str = DASHBOARD_Y
     FROM {SCHEMA}.dim_schools ds
     LEFT JOIN {SCHEMA}.fact_school_totals f
       ON f.school_id = ds.school_id AND f.school_year = ds.school_year
-    LEFT JOIN {SCHEMA}.{stage_table} sd
-      ON BTRIM(COALESCE(sd.{school_id_col}::text, '')) = ds.school_id
     WHERE {' AND '.join(where)}
     GROUP BY 1, 2, 3
     HAVING COUNT(DISTINCT ds.school_id) > 0
     ORDER BY total_schools DESC NULLS LAST, location_name
     """
     return _q(sql, params)
-
 
 
 def _district_metric_frame(state_name: str = "All", school_year: str = DASHBOARD_YEAR) -> pd.DataFrame:

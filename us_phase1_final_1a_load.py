@@ -203,8 +203,13 @@ def build_marts(cur) -> None:
             geo_join_col = None
             geo_county_col = None
 
-    geo_select = f"g.{geo_county_col} AS county_name," if geo_join_col and geo_county_col else "NULL::text AS county_name,"
-    geo_join = f"LEFT JOIN {SCHEMA}.{TABLE_MAP['sch_geo']} g ON BTRIM(COALESCE(g.{geo_join_col}::text, '')) = BTRIM(COALESCE(d.ncessch::text, ''))" if geo_join_col and geo_county_col else ""
+    geo_select = f"NULLIF(BTRIM(g.{geo_county_col}::text), '') AS county_name," if geo_join_col and geo_county_col else "NULL::text AS county_name,"
+    geo_join = (
+        f"LEFT JOIN {SCHEMA}.{TABLE_MAP['sch_geo']} g "
+        f"ON LPAD(REGEXP_REPLACE(SPLIT_PART(BTRIM(COALESCE(g.{geo_join_col}::text, '')), '.', 1), '[^0-9]', '', 'g'), 12, '0') "
+        f"= LPAD(REGEXP_REPLACE(BTRIM(COALESCE(d.ncessch::text, '')), '[^0-9]', '', 'g'), 12, '0')"
+        if geo_join_col and geo_county_col else ""
+    )
 
     sql_text = f"""
     DROP VIEW IF EXISTS {SCHEMA}.vw_dashboard_readiness CASCADE;
