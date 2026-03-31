@@ -179,3 +179,6 @@ dump.rdb
 __pycache__/
 *.pyc
 data/us/final_1a_2024_2025/
+
+# NCES PSS local downloads
+data/us_pss/

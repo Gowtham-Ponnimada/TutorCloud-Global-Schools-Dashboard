@@ -397,6 +397,14 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
     if management_type and management_type != "All":
         clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
         params.append(management_type)
+    management_type = filters.get("management_type")
+    if management_type and management_type != "All":
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(management_type)
+    management_type = filters.get("management_type")
+    if management_type and management_type != "All":
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(management_type)
     levels = [x for x in (filters.get("school_levels") or []) if x]
     if levels:
         clauses.append(f"{alias}.school_level = ANY(%s)")
@@ -887,6 +895,7 @@ def render_us_home():
 
     st.markdown("<div class='us-title'>🇺🇸 United States Education Dashboard</div>", unsafe_allow_html=True)
     st.markdown("<div class='us-subtitle'>National K–12 overview using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
+    st.info("Public metrics use NCES CCD 2024–2025 universe counts. Private metrics use NCES PSS 2021–2022 PFNLWT-weighted estimates. Combined totals are mixed-year and explicitly tagged.")
 
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
@@ -962,6 +971,8 @@ def render_us_state_dashboard():
     st.markdown("<div class='us-subtitle'>Comprehensive state-level analysis with advanced US-equivalent filters.</div>", unsafe_allow_html=True)
     if filters.get("management_type") in ("All", "Private"):
         st.info("School Management includes NCES PSS private-school data from 2021–2022. Public-school data remains CCD 2024–2025. Grade-level enrollment detail remains public-only for now.")
+    if filters.get("management_type") in ("All", "Private"):
+        st.info("School Management uses NCES CCD 2024–2025 universe counts for Govt/Public schools and NCES PSS 2021–2022 PFNLWT-weighted estimates for Private schools. Grade-level enrollment detail remains public-only for now.")
 
     k = _state_dashboard_kpis(filters)
     c1, c2, c3 = st.columns(3)
@@ -1369,3 +1380,366 @@ def render_us_analytics():
 
     _render_footer()
 
+
+
+
+# ===== Build 3 weighted private metrics override =====
+def _weight_expr(alias: str = "ds") -> str:
+    return f"CASE WHEN COALESCE({alias}.management_type, 'Govt') = 'Private' THEN COALESCE({alias}.pss_final_weight, 1::numeric) ELSE 1::numeric END"
+
+def _weighted_school_sum_raw(alias: str = "ds") -> str:
+    return f"SUM({_weight_expr(alias)})"
+
+def _weighted_students_sum_raw(ds_alias: str = "ds", fact_alias: str = "f") -> str:
+    return f"SUM(({_weight_expr(ds_alias)}) * COALESCE({fact_alias}.total_students, 0)::numeric)"
+
+def _weighted_teachers_sum_raw(ds_alias: str = "ds", fact_alias: str = "f") -> str:
+    return f"SUM(({_weight_expr(ds_alias)}) * COALESCE({fact_alias}.total_teachers, 0)::numeric)"
+
+def _weighted_schools_with_enrollment_raw(ds_alias: str = "ds", fact_alias: str = "f") -> str:
+    return f"SUM(CASE WHEN {fact_alias}.total_students IS NOT NULL THEN {_weight_expr(ds_alias)} ELSE 0::numeric END)"
+
+def _national_summary() -> dict:
+    school_sum = _weighted_school_sum_raw("ds")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    sql = f'''
+    SELECT
+        COUNT(DISTINCT ds.state_name) AS total_states,
+        ROUND({school_sum}, 0) AS total_schools,
+        COUNT(DISTINCT ds.district_id) AS total_districts,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr,
+        CASE WHEN COALESCE({school_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({school_sum}, 0), 2) END AS students_per_school
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    WHERE ds.school_year = %s
+    '''
+    df = _q(sql, [DASHBOARD_YEAR])
+    if df.empty:
+        return {"total_states": 0, "total_schools": 0, "total_districts": 0, "total_students": 0, "total_teachers": 0, "ptr": None, "students_per_school": None}
+    return df.iloc[0].to_dict()
+
+def _top_states_by_schools(limit: int = 10) -> pd.DataFrame:
+    school_sum = _weighted_school_sum_raw("ds")
+    sql = f'''
+    SELECT
+        ds.state_name,
+        ROUND({school_sum}, 0) AS total_schools
+    FROM {SCHEMA}.dim_schools ds
+    WHERE ds.school_year = %s
+    GROUP BY ds.state_name
+    ORDER BY total_schools DESC NULLS LAST, ds.state_name
+    LIMIT %s
+    '''
+    return _q(sql, [DASHBOARD_YEAR, limit])
+
+def _top_states_by_students(limit: int = 20) -> pd.DataFrame:
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    sql = f'''
+    SELECT
+        ds.state_name,
+        ROUND({student_sum}, 0) AS total_students
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    WHERE ds.school_year = %s
+    GROUP BY ds.state_name
+    ORDER BY total_students DESC NULLS LAST, ds.state_name
+    LIMIT %s
+    '''
+    return _q(sql, [DASHBOARD_YEAR, limit])
+
+def _school_level_mix(filters: dict | None = None) -> pd.DataFrame:
+    where, params = _base_where(filters, "ds")
+    school_sum = _weighted_school_sum_raw("ds")
+    sql = f'''
+    SELECT
+        COALESCE(ds.school_level, 'Unknown') AS school_level,
+        ROUND({school_sum}, 0) AS school_count
+    FROM {SCHEMA}.dim_schools ds
+    {where}
+    GROUP BY 1
+    ORDER BY school_count DESC, school_level
+    '''
+    return _q(sql, params)
+
+def _state_dashboard_kpis(filters: dict) -> dict:
+    where, params = _base_where(filters, "ds")
+    school_sum = _weighted_school_sum_raw("ds")
+    enr_school_sum = _weighted_schools_with_enrollment_raw("ds", "f")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    sql = f'''
+    SELECT
+        ROUND({school_sum}, 0) AS total_schools,
+        ROUND({enr_school_sum}, 0) AS schools_with_enrollment,
+        COUNT(DISTINCT ds.district_id) AS total_districts,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    {where}
+    '''
+    df = _q(sql, params)
+    if df.empty:
+        return {"total_schools": 0, "schools_with_enrollment": 0, "total_districts": 0, "total_students": 0, "total_teachers": 0, "ptr": None}
+    return df.iloc[0].to_dict()
+
+def _district_kpi_table(filters: dict, limit: int = 50) -> pd.DataFrame:
+    where, params = _base_where(filters, "ds")
+    params = params + [limit]
+    school_sum = _weighted_school_sum_raw("ds")
+    enr_school_sum = _weighted_schools_with_enrollment_raw("ds", "f")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    sql = f'''
+    SELECT
+        COALESCE(ds.district_name, 'Unknown') AS district_name,
+        ROUND({school_sum}, 0) AS total_schools,
+        ROUND({enr_school_sum}, 0) AS schools_with_enrollment,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    {where}
+    GROUP BY 1
+    ORDER BY total_schools DESC NULLS LAST, district_name
+    LIMIT %s
+    '''
+    return _q(sql, params)
+
+def _city_kpi_table(filters: dict, limit: int = 100) -> pd.DataFrame:
+    where, params = _base_where(filters, "ds")
+    params = params + [limit]
+    school_sum = _weighted_school_sum_raw("ds")
+    enr_school_sum = _weighted_schools_with_enrollment_raw("ds", "f")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    sql = f'''
+    SELECT
+        COALESCE(ds.city, 'Unknown') AS city,
+        ROUND({school_sum}, 0) AS total_schools,
+        ROUND({enr_school_sum}, 0) AS schools_with_enrollment,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    {where}
+    GROUP BY 1
+    ORDER BY total_schools DESC NULLS LAST, city
+    LIMIT %s
+    '''
+    return _q(sql, params)
+
+def _schools_by_city(filters: dict, limit: int = 20) -> pd.DataFrame:
+    where, params = _base_where(filters, "ds")
+    params = params + [limit]
+    school_sum = _weighted_school_sum_raw("ds")
+    sql = f'''
+    SELECT
+        COALESCE(ds.city, 'Unknown') AS city,
+        ROUND({school_sum}, 0) AS school_count
+    FROM {SCHEMA}.dim_schools ds
+    {where}
+    GROUP BY 1
+    ORDER BY school_count DESC, city
+    LIMIT %s
+    '''
+    return _q(sql, params)
+
+def _state_metric_frame(school_year: str = DASHBOARD_YEAR) -> pd.DataFrame:
+    school_sum = _weighted_school_sum_raw("ds")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    enr_school_sum = _weighted_schools_with_enrollment_raw("ds", "f")
+    sql = f'''
+    SELECT
+        ds.state_name,
+        ROUND({school_sum}, 0) AS total_schools,
+        COUNT(DISTINCT ds.district_id) AS total_districts,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr,
+        CASE WHEN COALESCE({school_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({school_sum}, 0), 2) END AS students_per_school,
+        ROUND({enr_school_sum}, 0) AS schools_with_enrollment
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    WHERE ds.school_year = %s
+    GROUP BY ds.state_name
+    ORDER BY ds.state_name
+    '''
+    return _q(sql, [school_year])
+
+def _county_metric_frame(state_name: str = "All", school_year: str = DASHBOARD_YEAR) -> pd.DataFrame:
+    stage_table = f"stg_sch_directory_{_year_tag(school_year)}"
+    county_col = _first_existing_column(stage_table, ["county_name", "coname", "county", "countyname", "county15", "coname15"])
+    school_id_col = _first_existing_column(stage_table, ["ncessch", "school_id", "schoolid", "nces_id"])
+    if not county_col or not school_id_col:
+        return pd.DataFrame()
+
+    county_expr = f"COALESCE(NULLIF(BTRIM(sd.{county_col}::text), ''), 'Unknown')"
+    location_expr = county_expr if state_name != "All" else f"{county_expr} || ', ' || ds.state_name"
+
+    params = [school_year]
+    where = ["ds.school_year = %s"]
+    if state_name and state_name != "All":
+        where.append("ds.state_name = %s")
+        params.append(state_name)
+
+    school_sum = _weighted_school_sum_raw("ds")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+
+    sql = f'''
+    SELECT
+        ds.state_name,
+        {county_expr} AS county_name,
+        {location_expr} AS location_name,
+        ROUND({school_sum}, 0) AS total_schools,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr,
+        CASE WHEN COALESCE({school_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({school_sum}, 0), 2) END AS students_per_school
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    LEFT JOIN {SCHEMA}.{stage_table} sd
+      ON BTRIM(COALESCE(sd.{school_id_col}::text, '')) = ds.school_id
+    WHERE {' AND '.join(where)}
+    GROUP BY 1, 2, 3
+    HAVING ROUND({school_sum}, 0) > 0
+    ORDER BY total_schools DESC NULLS LAST, location_name
+    '''
+    return _q(sql, params)
+
+def _district_metric_frame(state_name: str = "All", school_year: str = DASHBOARD_YEAR) -> pd.DataFrame:
+    params = [school_year]
+    clauses = ["ds.school_year = %s"]
+    if state_name and state_name != "All":
+        clauses.append("ds.state_name = %s")
+        params.append(state_name)
+
+    location_expr = "ds.district_name" if state_name != "All" else "ds.district_name || ', ' || ds.state_name"
+    school_sum = _weighted_school_sum_raw("ds")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+
+    sql = f'''
+    SELECT
+        ds.state_name,
+        ds.district_name,
+        {location_expr} AS location_name,
+        ROUND({school_sum}, 0) AS total_schools,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr,
+        CASE WHEN COALESCE({school_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({school_sum}, 0), 2) END AS students_per_school
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    WHERE {' AND '.join(clauses)}
+    GROUP BY ds.state_name, ds.district_name, 3
+    ORDER BY total_schools DESC NULLS LAST, ds.state_name, ds.district_name
+    '''
+    return _q(sql, params)
+
+def _comparison_frame(left_state: str, right_state: str) -> pd.DataFrame:
+    school_sum = _weighted_school_sum_raw("ds")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    enr_school_sum = _weighted_schools_with_enrollment_raw("ds", "f")
+    sql = f'''
+    SELECT
+        ds.state_name,
+        ROUND({school_sum}, 0) AS total_schools,
+        COUNT(DISTINCT ds.district_id) AS total_districts,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr,
+        ROUND({enr_school_sum}, 0) AS schools_with_enrollment
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    WHERE ds.school_year = %s AND ds.state_name = ANY(%s)
+    GROUP BY ds.state_name
+    ORDER BY ds.state_name
+    '''
+    return _q(sql, [DASHBOARD_YEAR, [left_state, right_state]])
+
+def _district_comparison_frame(left_state: str, left_district: str, right_state: str, right_district: str) -> pd.DataFrame:
+    school_sum = _weighted_school_sum_raw("ds")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    enr_school_sum = _weighted_schools_with_enrollment_raw("ds", "f")
+    sql = f'''
+    SELECT
+        ds.state_name,
+        ds.district_name,
+        ROUND({school_sum}, 0) AS total_schools,
+        ROUND({student_sum}, 0) AS total_students,
+        ROUND({teacher_sum}, 0) AS total_teachers,
+        CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr,
+        ROUND({enr_school_sum}, 0) AS schools_with_enrollment
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f
+      ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    WHERE ds.school_year = %s
+      AND ((ds.state_name = %s AND ds.district_name = %s) OR (ds.state_name = %s AND ds.district_name = %s))
+    GROUP BY ds.state_name, ds.district_name
+    ORDER BY ds.state_name, ds.district_name
+    '''
+    return _q(sql, [DASHBOARD_YEAR, left_state, left_district, right_state, right_district])
+
+def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> pd.DataFrame:
+    dim_map = {
+        "State": ("ds.state_name", "state_name"),
+        "District": ("ds.district_name", "district_name"),
+        "Location (City)": ("ds.city", "city"),
+        "School Type": ("ds.delivery_model", "school_type"),
+        "Institution Type": ("ds.sch_type_text", "institution_type"),
+        "School Management": ("ds.management_type", "management_type"),
+        "District Type": ("dd.lea_type_text", "district_type"),
+        "School Category": ("ds.school_level", "school_category"),
+    }
+    school_sum = _weighted_school_sum_raw("ds")
+    student_sum = _weighted_students_sum_raw("ds", "f")
+    teacher_sum = _weighted_teachers_sum_raw("ds", "f")
+    metric_map = {
+        "Schools": f"ROUND({school_sum}, 0) AS total_schools",
+        "Students": f"ROUND({student_sum}, 0) AS total_students",
+        "Teachers": f"ROUND({teacher_sum}, 0) AS total_teachers",
+        "PTR": f"CASE WHEN COALESCE({teacher_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({teacher_sum}, 0), 2) END AS ptr",
+        "Students/School": f"CASE WHEN COALESCE({school_sum}, 0) > 0 THEN ROUND(({student_sum}) / NULLIF({school_sum}, 0), 2) END AS students_per_school",
+    }
+    selected_dims = [dim_map[d] for d in dimensions if d in dim_map]
+    if not selected_dims:
+        return pd.DataFrame()
+    selected_metrics = [metric_map[m] for m in metrics if m in metric_map]
+    if not selected_metrics:
+        return pd.DataFrame()
+    group_expr = ", ".join(expr for expr, _ in selected_dims)
+    select_dims = ", ".join(f"{expr} AS {alias}" for expr, alias in selected_dims)
+    select_metrics = ", ".join(selected_metrics)
+    where, params = _base_where(filters, "ds")
+    sql = f'''
+    SELECT {select_dims}, {select_metrics}
+    FROM {SCHEMA}.dim_schools ds
+    LEFT JOIN {SCHEMA}.fact_school_totals f ON f.school_id = ds.school_id AND f.school_year = ds.school_year
+    LEFT JOIN {SCHEMA}.dim_districts dd ON dd.district_id = ds.district_id AND dd.school_year = ds.school_year
+    {where}
+    GROUP BY {group_expr}
+    ORDER BY 1, 2, 3
+    LIMIT 1000
+    '''
+    return _q(sql, params)
+# ===== end Build 3 weighted private metrics override =====

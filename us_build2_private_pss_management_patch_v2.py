@@ -256,6 +256,7 @@ def normalize_private_type(raw: str) -> str:
 def write_normalized_csv(src_csv: Path, state_map: dict[str, tuple[str, str]]) -> Path:
     norm_path = EXTRACT_DIR / "pss_private_normalized_2021_2022.csv"
     last_err = None
+    rows = None
     for enc in ("utf-8-sig", "latin-1", "cp1252"):
         try:
             with open(src_csv, "r", newline="", encoding=enc) as fh:
@@ -281,6 +282,7 @@ def write_normalized_csv(src_csv: Path, state_map: dict[str, tuple[str, str]]) -
     type_col = pick(headers, ["typology", "school_type", "private_school_type", "relig", "orientation"])
     students_col = pick(headers, ["numstuds", "enrollment", "student_count", "num_students"])
     teachers_col = pick(headers, ["numteach", "numteachers", "teacher_count", "teachers", "num_teachers"])
+    weight_col = pick(headers, ["pfnlwt", "finalwt", "final_weight", "weight", "wgt"])
 
     if not name_col or not state_col:
         raise RuntimeError(f"PSS CSV missing required name/state columns. Headers sample: {headers[:50]}")
@@ -289,7 +291,7 @@ def write_normalized_csv(src_csv: Path, state_map: dict[str, tuple[str, str]]) -
         "school_year","source_school_year","source_system","management_type",
         "school_id","school_name","state_fips","state_abbr","state_name",
         "district_id","district_name","city","zip_code","phone",
-        "school_level","sch_type_text","delivery_model",
+        "school_level","sch_type_text","delivery_model","pss_final_weight",
         "total_students","total_teachers","ptr"
     ]
 
@@ -308,6 +310,7 @@ def write_normalized_csv(src_csv: Path, state_map: dict[str, tuple[str, str]]) -
             district_name = f"{state_name} Private Schools" if state_name and state_name != "Unknown" else "Private Schools"
             total_students = clean_num(row.get(students_col, "")) if students_col else ""
             total_teachers = clean_num(row.get(teachers_col, "")) if teachers_col else ""
+            pss_final_weight = clean_num(row.get(weight_col, "")) if weight_col else ""
             ptr = ""
             try:
                 if total_students and total_teachers and float(total_teachers) > 0:
@@ -332,11 +335,13 @@ def write_normalized_csv(src_csv: Path, state_map: dict[str, tuple[str, str]]) -
                 "school_level": normalize_level(row.get(level_col, "")) if level_col else "Unknown",
                 "sch_type_text": normalize_private_type(row.get(type_col, "")) if type_col else "Private School",
                 "delivery_model": "Unknown",
+                "pss_final_weight": pss_final_weight,
                 "total_students": total_students,
                 "total_teachers": total_teachers,
                 "ptr": ptr,
             })
     return norm_path
+
 def create_text_stage_and_load(cur, csv_path: Path) -> int:
     with open(csv_path, "r", newline="", encoding="utf-8") as f:
         headers = [sanitize(h) for h in next(csv.reader(f))]
@@ -351,102 +356,88 @@ def create_text_stage_and_load(cur, csv_path: Path) -> int:
 
 def build_private_dim(cur) -> int:
     cur.execute(f"DROP TABLE IF EXISTS {SCHEMA}.{PRIVATE_DIM_TABLE}")
-    cur.execute(
-        f"""
+    cur.execute(f"""
         CREATE TABLE {SCHEMA}.{PRIVATE_DIM_TABLE} AS
         SELECT
             school_year, source_school_year, source_system, management_type,
             school_id, school_name, state_fips, state_abbr, state_name,
             district_id, district_name, city, zip_code, phone,
             school_level, sch_type_text, delivery_model,
+            NULLIF(pss_final_weight, '')::numeric AS pss_final_weight,
             NULLIF(total_students, '')::numeric AS total_students,
             NULLIF(total_teachers, '')::numeric AS total_teachers,
             NULLIF(ptr, '')::numeric AS ptr
         FROM {SCHEMA}.{STAGE_TABLE}
-        """
-    )
+    """)
     cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.{PRIVATE_DIM_TABLE}")
-    return cur.fetchone()[0]
+    return int(cur.fetchone()[0])
 
-def ensure_public_columns(cur) -> None:
-    cur.execute(f"ALTER TABLE {SCHEMA}.dim_schools ADD COLUMN IF NOT EXISTS management_type TEXT")
-    cur.execute(f"ALTER TABLE {SCHEMA}.dim_schools ADD COLUMN IF NOT EXISTS source_system TEXT")
-    cur.execute(f"ALTER TABLE {SCHEMA}.dim_schools ADD COLUMN IF NOT EXISTS source_school_year TEXT")
-    cur.execute(
-        f"""
+def ensure_public_columns(cur):
+    cur.execute(f"ALTER TABLE {SCHEMA}.dim_schools ADD COLUMN IF NOT EXISTS management_type text")
+    cur.execute(f"ALTER TABLE {SCHEMA}.dim_schools ADD COLUMN IF NOT EXISTS source_system text")
+    cur.execute(f"ALTER TABLE {SCHEMA}.dim_schools ADD COLUMN IF NOT EXISTS source_school_year text")
+    cur.execute(f"ALTER TABLE {SCHEMA}.dim_schools ADD COLUMN IF NOT EXISTS pss_final_weight numeric")
+
+    cur.execute(f"""
         UPDATE {SCHEMA}.dim_schools
-        SET management_type = COALESCE(NULLIF(BTRIM(management_type), ''), 'Govt'),
-            source_system = COALESCE(NULLIF(BTRIM(source_system), ''), 'CCD'),
-            source_school_year = COALESCE(NULLIF(BTRIM(source_school_year), ''), school_year)
-        WHERE school_year = %s
-        """,
-        [DASHBOARD_YEAR],
-    )
+           SET management_type = COALESCE(NULLIF(management_type, ''), 'Govt'),
+               source_system = COALESCE(NULLIF(source_system, ''), 'CCD'),
+               source_school_year = COALESCE(NULLIF(source_school_year, ''), '{DASHBOARD_YEAR}')
+         WHERE COALESCE(source_system, 'CCD') <> 'PSS'
+    """)
 
 def refresh_private_dim_schools(cur) -> int:
-    cur.execute(
-        f"""
-        DELETE FROM {SCHEMA}.dim_schools
-        WHERE COALESCE(source_system, '') = 'PSS'
-           OR COALESCE(management_type, '') = 'Private'
-           OR school_id LIKE 'PSS-%'
-        """
-    )
-    dim_cols = set(table_columns(cur, "dim_schools"))
-    ordered = [
-        "school_year","state_fips","state_name","state_abbr","district_id","state_district_id","district_name",
-        "school_id","state_school_id","schid","school_name","city","mailing_state","zip_code","phone","website",
-        "sy_status","sy_status_text","sch_type","sch_type_text","charter_text","school_level","low_grade","high_grade",
-        "igoffered","shared_time","nslp_status","nslp_status_text","virtual","virtual_text","delivery_model",
-        "management_type","source_system","source_school_year","created_at"
-    ]
-    expr = {
-        "school_year": "school_year",
-        "state_fips": "NULLIF(state_fips, '')",
-        "state_name": "state_name",
-        "state_abbr": "state_abbr",
-        "district_id": "district_id",
-        "state_district_id": "district_id",
-        "district_name": "district_name",
-        "school_id": "school_id",
-        "state_school_id": "school_id",
-        "schid": "NULL",
-        "school_name": "school_name",
-        "city": "NULLIF(city, '')",
-        "mailing_state": "state_abbr",
-        "zip_code": "NULLIF(zip_code, '')",
-        "phone": "NULLIF(phone, '')",
-        "website": "NULL",
-        "sy_status": "'1'",
-        "sy_status_text": "'Open'",
-        "sch_type": "NULL",
-        "sch_type_text": "sch_type_text",
-        "charter_text": "NULL",
-        "school_level": "school_level",
-        "low_grade": "NULL",
-        "high_grade": "NULL",
-        "igoffered": "NULL",
-        "shared_time": "NULL",
-        "nslp_status": "NULL",
-        "nslp_status_text": "NULL",
-        "virtual": "NULL",
-        "virtual_text": "NULL",
-        "delivery_model": "delivery_model",
-        "management_type": "management_type",
-        "source_system": "source_system",
-        "source_school_year": "source_school_year",
-        "created_at": "now()",
-    }
-    use_cols = [c for c in ordered if c in dim_cols]
-    cur.execute(
-        f"""
-        INSERT INTO {SCHEMA}.dim_schools ({', '.join(use_cols)})
-        SELECT {', '.join(expr[c] for c in use_cols)}
+    ensure_public_columns(cur)
+    cur.execute(f"DELETE FROM {SCHEMA}.dim_schools WHERE COALESCE(source_system, '') = 'PSS' OR COALESCE(management_type, '') = 'Private'")
+    cur.execute(f"""
+        INSERT INTO {SCHEMA}.dim_schools (
+            school_year, state_fips, state_name, state_abbr, district_id, state_district_id, district_name,
+            school_id, state_school_id, schid, school_name, city, mailing_state, zip_code, phone, website,
+            sy_status, sy_status_text, sch_type, sch_type_text, charter_text, school_level, low_grade, high_grade,
+            igoffered, shared_time, nslp_status, nslp_status_text, virtual, virtual_text, delivery_model,
+            management_type, source_system, source_school_year, pss_final_weight, created_at
+        )
+        SELECT
+            school_year,
+            state_fips,
+            state_name,
+            state_abbr,
+            district_id,
+            district_id AS state_district_id,
+            district_name,
+            school_id,
+            school_id AS state_school_id,
+            NULL AS schid,
+            school_name,
+            city,
+            state_abbr AS mailing_state,
+            zip_code,
+            phone,
+            NULL AS website,
+            '1' AS sy_status,
+            'Open' AS sy_status_text,
+            NULL AS sch_type,
+            sch_type_text,
+            NULL AS charter_text,
+            school_level,
+            NULL AS low_grade,
+            NULL AS high_grade,
+            NULL AS igoffered,
+            NULL AS shared_time,
+            NULL AS nslp_status,
+            NULL AS nslp_status_text,
+            NULL AS virtual,
+            NULL AS virtual_text,
+            delivery_model,
+            management_type,
+            source_system,
+            source_school_year,
+            pss_final_weight,
+            now() AS created_at
         FROM {SCHEMA}.{PRIVATE_DIM_TABLE}
-        """
-    )
-    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.dim_schools WHERE COALESCE(source_system, '') = 'PSS'")
-    return cur.fetchone()[0]
+    """)
+    cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.dim_schools WHERE source_system = 'PSS'")
+    return int(cur.fetchone()[0])
 
 def refresh_private_fact_school_totals(cur) -> int:
     fact_cols = set(table_columns(cur, "fact_school_totals"))

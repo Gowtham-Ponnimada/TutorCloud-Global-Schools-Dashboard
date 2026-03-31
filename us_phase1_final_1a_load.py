@@ -313,6 +313,7 @@ def build_marts(cur) -> None:
         'Govt'::text AS management_type,
         'CCD'::text AS source_system,
         '2024-2025'::text AS source_school_year,
+        NULL::numeric AS pss_final_weight,
         now() AS created_at
     FROM {SCHEMA}.{TABLE_MAP['sch_directory']} d
     LEFT JOIN {SCHEMA}.{TABLE_MAP['sch_characteristics']} c
