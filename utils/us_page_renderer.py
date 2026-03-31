@@ -417,6 +417,10 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
     if management_type and management_type != "All":
         clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
         params.append(management_type)
+    management_type = filters.get("management_type")
+    if management_type and management_type != "All":
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(management_type)
     levels = [x for x in (filters.get("school_levels") or []) if x]
     if levels:
         clauses.append(f"{alias}.school_level = ANY(%s)")
