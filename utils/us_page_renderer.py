@@ -309,6 +309,19 @@ def _delivery_models(state_name: str = "All", district_name: str = "All") -> lis
     return _distinct_values(sql, params, "delivery_model")
 
 
+def _management_types(state_name: str = "All", district_name: str = "All") -> list[str]:
+    clauses = ["school_year = %s", "management_type IS NOT NULL", "BTRIM(management_type) <> ''"]
+    params: list = [DASHBOARD_YEAR]
+    if state_name and state_name != "All":
+        clauses.append("state_name = %s")
+        params.append(state_name)
+    if district_name and district_name != "All":
+        clauses.append("district_name = %s")
+        params.append(district_name)
+    sql = f"SELECT DISTINCT management_type FROM {SCHEMA}.dim_schools WHERE {' AND '.join(clauses)} ORDER BY management_type"
+    return _distinct_values(sql, params, "management_type")
+
+
 
 def _district_types(state_name: str = "All") -> list[str]:
     clauses = ["school_year = %s", "lea_type_text IS NOT NULL", "BTRIM(lea_type_text) <> ''"]
@@ -335,6 +348,10 @@ def _build_sidebar_filters() -> dict:
         delivery_opts = ["All"] + _delivery_models(state, district)
         delivery_model = st.selectbox("School Type", delivery_opts, index=0, key="us_delivery_model")
 
+        management_opts = ["All"] + _management_types(state, district)
+        management_index = management_opts.index("Govt") if "Govt" in management_opts else 0
+        management_type = st.selectbox("School Management", management_opts, index=management_index, key="us_management_type")
+
         school_type_opts = _school_types(state, district)
         school_types = st.multiselect("Institution Type", school_type_opts, key="us_school_types")
 
@@ -350,6 +367,7 @@ def _build_sidebar_filters() -> dict:
             "districts": [district] if district != "All" else [],
             "cities": cities,
             "delivery_model": delivery_model,
+            "management_type": management_type,
             "school_levels": school_levels,
             "school_types": school_types,
             "district_types": district_types,
@@ -375,6 +393,10 @@ def _base_where(filters: dict | None = None, alias: str = "ds"):
     if delivery_model and delivery_model != "All":
         clauses.append(f"COALESCE({alias}.delivery_model, 'Unknown') = %s")
         params.append(delivery_model)
+    management_type = filters.get("management_type")
+    if management_type and management_type != "All":
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(management_type)
     levels = [x for x in (filters.get("school_levels") or []) if x]
     if levels:
         clauses.append(f"{alias}.school_level = ANY(%s)")
@@ -808,6 +830,7 @@ def _custom_report(dimensions: list[str], metrics: list[str], filters: dict) -> 
         "Location (City)": ("ds.city", "city"),
         "School Type": ("ds.delivery_model", "school_type"),
         "Institution Type": ("ds.sch_type_text", "institution_type"),
+        "School Management": ("ds.management_type", "management_type"),
         "District Type": ("dd.lea_type_text", "district_type"),
         "School Category": ("ds.school_level", "school_category"),
     }
@@ -937,6 +960,8 @@ def render_us_state_dashboard():
         title_state = f"{title_state} / {filters.get('district')}"
     st.markdown(f"<div class='us-title'>📊 US State Dashboard — {title_state}</div>", unsafe_allow_html=True)
     st.markdown("<div class='us-subtitle'>Comprehensive state-level analysis with advanced US-equivalent filters.</div>", unsafe_allow_html=True)
+    if filters.get("management_type") in ("All", "Private"):
+        st.info("School Management includes NCES PSS private-school data from 2021–2022. Public-school data remains CCD 2024–2025. Grade-level enrollment detail remains public-only for now.")
 
     k = _state_dashboard_kpis(filters)
     c1, c2, c3 = st.columns(3)
@@ -1158,6 +1183,7 @@ def render_us_analytics():
 
     st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
+    st.info("School Management defaults to Govt. Private-school rows use NCES PSS 2021–2022; public-school rows use CCD 2024–2025.")
 
     if selected_year != DASHBOARD_YEAR:
         st.info("US analytics is currently backed by the loaded 2024–2025 NCES dataset. Additional years will appear here after they are ingested.")
@@ -1251,7 +1277,10 @@ def render_us_analytics():
     with tabs[1]:
         perf_state = st.selectbox("Select State (All for National)", ["All"] + _states(), index=0, key="us_perf_state")
         perf_delivery_model = st.selectbox("School Type", ["All"] + _delivery_models(perf_state), index=0, key="us_perf_delivery_model")
-        perf_filters = {"state": perf_state, "districts": [], "school_levels": [], "delivery_model": perf_delivery_model}
+        perf_management_opts = ["All"] + _management_types(perf_state)
+        perf_management_index = perf_management_opts.index("Govt") if "Govt" in perf_management_opts else 0
+        perf_management_type = st.selectbox("School Management", perf_management_opts, index=perf_management_index, key="us_perf_management_type")
+        perf_filters = {"state": perf_state, "districts": [], "school_levels": [], "delivery_model": perf_delivery_model, "management_type": perf_management_type}
         perf = _state_dashboard_kpis(perf_filters)
 
         total_schools = float(perf.get("total_schools") or 0)
@@ -1319,11 +1348,15 @@ def render_us_analytics():
         )
         report_state = st.selectbox("Filter by State", ["All"] + _states(), index=0, key="us_report_state")
         report_delivery_model = st.selectbox("Filter by School Type", ["All"] + _delivery_models(report_state), index=0, key="us_report_delivery_model")
+        report_management_opts = ["All"] + _management_types(report_state)
+        report_management_index = report_management_opts.index("Govt") if "Govt" in report_management_opts else 0
+        report_management_type = st.selectbox("Filter by School Management", report_management_opts, index=report_management_index, key="us_report_management_type")
         report_districts = st.multiselect("Filter by District", _districts(report_state), key="us_report_districts")
         report_levels = st.multiselect("Filter by School Category", _school_levels(report_state), key="us_report_levels")
         report_filters = {
             "state": report_state,
             "delivery_model": report_delivery_model,
+            "management_type": report_management_type,
             "districts": report_districts,
             "school_levels": report_levels,
         }

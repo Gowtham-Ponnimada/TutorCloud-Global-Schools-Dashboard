@@ -310,6 +310,9 @@ def build_marts(cur) -> None:
             WHEN LOWER(BTRIM(c.virtual_text)) IN ('missing', 'not reported') THEN 'Unknown'
             ELSE 'Unknown'
         END AS delivery_model,
+        'Govt'::text AS management_type,
+        'CCD'::text AS source_system,
+        '2024-2025'::text AS source_school_year,
         now() AS created_at
     FROM {SCHEMA}.{TABLE_MAP['sch_directory']} d
     LEFT JOIN {SCHEMA}.{TABLE_MAP['sch_characteristics']} c
