@@ -51,7 +51,7 @@ TABLE_MAP = {
     'sea_staff': f'stg_sea_staff_raw_{YEAR_TAG}',
 }
 
-GEO_URL = 'https://data-nces.opendata.arcgis.com/api/download/v1/items/a15e8731a17a46aabc452ea607f172c0/csv?layers=0'
+GEO_URL = 'https://data-nces.opendata.arcgis.com/api/download/v1/items/0e8df2dcbbc54e13833344e2ca8c0fa4/csv?layers=0'
 GEO_TABLE = f'stg_sch_geo_{YEAR_TAG}'
 TABLE_MAP['sch_geo'] = GEO_TABLE
 
