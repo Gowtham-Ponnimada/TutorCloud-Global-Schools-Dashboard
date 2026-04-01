@@ -61,9 +61,13 @@ if _render_rb:
 
 from utils.uae_page_renderer import render_uae_home
 from utils.us_page_renderer import render_us_home
+from utils.au_page_renderer import render_au_home
 _current_region = st.session_state.get("selected_region", "India")
 if _current_region == "UAE":
     render_uae_home()
+    st.stop()
+elif _current_region == "Australia":
+    render_au_home()
     st.stop()
 elif _current_region == "United States":
     render_us_home()

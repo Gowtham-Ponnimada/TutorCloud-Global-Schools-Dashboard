@@ -1,160 +1,171 @@
-"""
-Australia page renderer scaffold.
-
-This file is intentionally minimal and designed to be merged into the
-existing TutorCloud renderer pattern while keeping India as the UI/UX contract.
-"""
-
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+import pandas as pd
+import streamlit as st
 
-AU_FILTER_BINDINGS = {
-    "school_year": {"label": "School Year", "field": "ds.school_year", "default": "2025", "all_value": "All"},
-    "state_name": {"label": "State/Territory", "field": "ds.state_name", "default": "All", "all_value": "All"},
-    "district_name": {"label": "District / LGA", "field": "ds.district_name", "default": "All", "all_value": "All"},
-    "suburb": {"label": "Suburb / Locality", "field": "ds.suburb", "default": "All", "all_value": "All"},
-    "management_type": {"label": "School Management", "field": "COALESCE(ds.management_type, 'Unknown')", "default": "All", "all_value": "All"},
-    "school_level": {"label": "School Level", "field": "COALESCE(ds.school_level, 'Unknown')", "default": "All", "all_value": "All"},
-    "remoteness": {"label": "Remoteness", "field": "COALESCE(ds.abs_remoteness_area_name, 'Unknown')", "default": "All", "all_value": "All"},
-    "governing_body": {"label": "Governing Body", "field": "COALESCE(ds.governing_body, 'Unknown')", "default": "All", "all_value": "All"},
-    "postcode": {"label": "Postcode", "field": "COALESCE(ds.postcode, 'Unknown')", "default": "All", "all_value": "All"},
-    "school_name": {"label": "School Name", "field": "ds.school_name", "default": "", "all_value": ""},
-}
-
-AU_FILTER_CASCADE = {
-    "state_name": ["district_name", "suburb", "governing_body", "postcode", "school_name"],
-    "district_name": ["suburb", "postcode", "school_name"],
-    "management_type": ["school_level", "remoteness", "governing_body", "school_name"],
-    "school_level": ["remoteness", "governing_body", "school_name"],
-}
+from au_phase1_final_load import db_engine
+from services.au_dashboard_service import AUDashboardService
 
 
-def _base_where_au(filters: Dict[str, Any] | None = None, alias: str = "ds") -> Tuple[str, list]:
-    filters = filters or {}
-    clauses = [f"{alias}.school_year = %s"]
-    params = [filters.get("school_year", "2025")]
-
-    for key, col in [
-        ("state_name", f"{alias}.state_name"),
-        ("district_name", f"{alias}.district_name"),
-        ("suburb", f"{alias}.suburb"),
-    ]:
-        value = filters.get(key)
-        if value and value != "All":
-            clauses.append(f"{col} = %s")
-            params.append(value)
-
-    for key, col in [
-        ("management_type", f"COALESCE({alias}.management_type, 'Unknown')"),
-        ("school_level", f"COALESCE({alias}.school_level, 'Unknown')"),
-        ("remoteness", f"COALESCE({alias}.abs_remoteness_area_name, 'Unknown')"),
-        ("governing_body", f"COALESCE({alias}.governing_body, 'Unknown')"),
-        ("postcode", f"COALESCE({alias}.postcode, 'Unknown')"),
-    ]:
-        value = filters.get(key)
-        if value and value != "All":
-            clauses.append(f"{col} = %s")
-            params.append(value)
-
-    school_name = (filters.get("school_name") or "").strip()
-    if school_name:
-        clauses.append(f"{alias}.school_name ILIKE %s")
-        params.append(f"%{school_name}%")
-
-    return " AND ".join(clauses), params
+@st.cache_resource
+def _get_service() -> AUDashboardService:
+    return AUDashboardService(db_engine(), school_year="2025")
 
 
-def au_kpi_sql(filters: Dict[str, Any] | None = None) -> Tuple[str, list]:
-    where_sql, params = _base_where_au(filters, alias="ds")
-    sql = f"""
-    SELECT
-        COUNT(DISTINCT ds.school_id) AS total_schools,
-        COALESCE(SUM(fs.total_students), 0) AS total_students,
-        COALESCE(SUM(fs.girls_students), 0) AS girls_students,
-        COALESCE(SUM(fs.boys_students), 0) AS boys_students,
-        COALESCE(SUM(fs.fte_teaching_staff), 0) AS fte_teaching_staff,
-        CASE
-            WHEN COALESCE(SUM(fs.fte_teaching_staff), 0) > 0
-            THEN ROUND(SUM(fs.total_students)::numeric / SUM(fs.fte_teaching_staff), 4)
-            ELSE NULL
-        END AS student_teacher_ratio
-    FROM au.dim_schools ds
-    LEFT JOIN au.fact_school_totals fs
-      ON ds.school_year = fs.school_year
-     AND ds.school_id = fs.school_id
-    WHERE {where_sql}
-    """
-    return sql, params
+def _fmt_int(value):
+    if value is None:
+        return "N/A"
+    try:
+        return f"{int(value):,}"
+    except Exception:
+        return str(value)
 
 
-def au_state_summary_sql(filters: Dict[str, Any] | None = None) -> Tuple[str, list]:
-    where_sql, params = _base_where_au(filters, alias="ds")
-    sql = f"""
-    SELECT
-        ds.state_name,
-        COUNT(DISTINCT ds.school_id) AS schools,
-        COALESCE(SUM(fs.total_students), 0) AS total_students,
-        COALESCE(SUM(fs.fte_teaching_staff), 0) AS fte_teaching_staff
-    FROM au.dim_schools ds
-    LEFT JOIN au.fact_school_totals fs
-      ON ds.school_year = fs.school_year
-     AND ds.school_id = fs.school_id
-    WHERE {where_sql}
-    GROUP BY ds.state_name
-    ORDER BY total_students DESC, ds.state_name
-    """
-    return sql, params
+def _fmt_float(value, digits=2):
+    if value is None:
+        return "N/A"
+    try:
+        return f"{float(value):,.{digits}f}"
+    except Exception:
+        return str(value)
 
 
-def au_district_summary_sql(filters: Dict[str, Any] | None = None) -> Tuple[str, list]:
-    where_sql, params = _base_where_au(filters, alias="ds")
-    sql = f"""
-    SELECT
-        ds.state_name,
-        ds.district_name,
-        COUNT(DISTINCT ds.school_id) AS schools,
-        COALESCE(SUM(fs.total_students), 0) AS total_students
-    FROM au.dim_schools ds
-    LEFT JOIN au.fact_school_totals fs
-      ON ds.school_year = fs.school_year
-     AND ds.school_id = fs.school_id
-    WHERE {where_sql}
-    GROUP BY ds.state_name, ds.district_name
-    ORDER BY total_students DESC, ds.state_name, ds.district_name
-    """
-    return sql, params
+def _fmt_pct(value, digits=2):
+    if value is None:
+        return "N/A"
+    try:
+        return f"{float(value):,.{digits}f}%"
+    except Exception:
+        return str(value)
 
 
-def au_school_directory_sql(filters: Dict[str, Any] | None = None) -> Tuple[str, list]:
-    where_sql, params = _base_where_au(filters, alias="ds")
-    sql = f"""
-    SELECT
-        ds.school_name,
-        ds.state_name,
-        ds.district_name,
-        ds.suburb,
-        ds.postcode,
-        ds.management_type,
-        ds.school_level,
-        ds.year_range,
-        ds.total_students,
-        ds.girls_students,
-        ds.boys_students,
-        ds.fte_teaching_staff,
-        ds.student_teacher_ratio,
-        ds.icsea,
-        ds.governing_body,
-        ds.school_url
-    FROM au.dim_schools ds
-    WHERE {where_sql}
-    ORDER BY ds.school_name
-    """
-    return sql, params
+def _summary_cards(summary: dict) -> None:
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Schools", _fmt_int(summary.get("schools")))
+    c2.metric("Students", _fmt_int(summary.get("total_students")))
+    c3.metric("Girls", _fmt_int(summary.get("girls_students")))
+    c4.metric("Boys", _fmt_int(summary.get("boys_students")))
+    c5.metric("Student-Teacher Ratio", _fmt_float(summary.get("student_teacher_ratio"), 2))
 
 
-def render_au_page_placeholder() -> str:
-    return (
-        "Australia renderer scaffold ready. Bind this file into the existing Streamlit page layout, "
-        "reuse India tab order, and point widgets to AU_FILTER_BINDINGS / AU_FILTER_CASCADE."
+def render_au_home() -> None:
+    svc = _get_service()
+    summary = svc.get_national_summary()
+    states = svc.get_state_kpis()
+
+    st.markdown("## 🇦🇺 Australia — National Overview")
+    st.caption("ACARA 2025 school profile, location, and enrolment analytics")
+
+    _summary_cards(summary)
+
+    st.markdown("### State KPI Summary")
+    state_df = pd.DataFrame(states)
+    if not state_df.empty:
+        cols = [
+            "state_name",
+            "state_abbr",
+            "schools",
+            "total_students",
+            "girls_students",
+            "boys_students",
+            "fte_teaching_staff",
+            "student_teacher_ratio",
+            "weighted_avg_icsea",
+            "weighted_indigenous_pct",
+            "weighted_lbote_yes_pct",
+        ]
+        state_df = state_df[cols]
+        st.dataframe(state_df, use_container_width=True, hide_index=True)
+
+        chart_df = state_df[["state_name", "total_students"]].copy().set_index("state_name")
+        st.bar_chart(chart_df)
+    else:
+        st.info("No Australia state KPI data available.")
+
+
+def render_au_state_dashboard() -> None:
+    svc = _get_service()
+    states = svc.get_state_kpis()
+
+    st.markdown("## 🇦🇺 Australia — State Dashboard")
+    st.caption("State and district performance overview")
+
+    if not states:
+        st.warning("No Australia state data available.")
+        return
+
+    state_names = [row["state_name"] for row in states]
+    default_state = "New South Wales" if "New South Wales" in state_names else state_names[0]
+
+    if "au_selected_state" not in st.session_state:
+        st.session_state["au_selected_state"] = default_state
+
+    selected_state = st.selectbox(
+        "Select State",
+        state_names,
+        index=state_names.index(st.session_state.get("au_selected_state", default_state)),
+        key="au_state_dashboard_select",
     )
+    st.session_state["au_selected_state"] = selected_state
+
+    state_row = next((row for row in states if row["state_name"] == selected_state), {})
+    d1, d2, d3, d4, d5 = st.columns(5)
+    d1.metric("State", state_row.get("state_name", "N/A"))
+    d2.metric("Schools", _fmt_int(state_row.get("schools")))
+    d3.metric("Students", _fmt_int(state_row.get("total_students")))
+    d4.metric("FTE Staff", _fmt_float(state_row.get("fte_teaching_staff"), 2))
+    d5.metric("STR", _fmt_float(state_row.get("student_teacher_ratio"), 2))
+
+    st.markdown("### District KPIs")
+    district_rows = svc.get_district_kpis(selected_state)
+    district_df = pd.DataFrame(district_rows)
+    if not district_df.empty:
+        st.dataframe(district_df, use_container_width=True, hide_index=True)
+
+        if "district_name" in district_df.columns and "total_students" in district_df.columns:
+            chart_df = district_df[["district_name", "total_students"]].copy().head(20).set_index("district_name")
+            st.bar_chart(chart_df)
+    else:
+        st.info("No district KPI rows available for this state.")
+
+    st.markdown("### Top Schools")
+    school_rows = svc.get_schools(state_name=selected_state, limit=100, offset=0)
+    school_df = pd.DataFrame(school_rows)
+    if not school_df.empty:
+        st.dataframe(school_df, use_container_width=True, hide_index=True)
+        st.caption("Schools with missing totals are displayed as N/A in detailed views.")
+    else:
+        st.info("No school rows available for the selected state.")
+
+
+def render_au_analytics() -> None:
+    svc = _get_service()
+    summary = svc.get_national_summary()
+    states = svc.get_state_kpis()
+
+    st.markdown("## 🇦🇺 Australia — Analytics")
+    st.caption("Comparative state analytics and AU-wide KPI views")
+
+    _summary_cards(summary)
+
+    state_df = pd.DataFrame(states)
+    if state_df.empty:
+        st.warning("No Australia analytics data available.")
+        return
+
+    st.markdown("### Students by State")
+    chart1 = state_df[["state_name", "total_students"]].copy().set_index("state_name")
+    st.bar_chart(chart1)
+
+    st.markdown("### Schools by State")
+    chart2 = state_df[["state_name", "schools"]].copy().set_index("state_name")
+    st.bar_chart(chart2)
+
+    st.markdown("### Student-Teacher Ratio by State")
+    chart3 = state_df[["state_name", "student_teacher_ratio"]].copy().set_index("state_name")
+    st.bar_chart(chart3)
+
+    st.markdown("### State Analytics Table")
+    state_df["weighted_indigenous_pct_display"] = state_df["weighted_indigenous_pct"].apply(_fmt_pct)
+    state_df["weighted_lbote_yes_pct_display"] = state_df["weighted_lbote_yes_pct"].apply(_fmt_pct)
+    st.dataframe(state_df, use_container_width=True, hide_index=True)
