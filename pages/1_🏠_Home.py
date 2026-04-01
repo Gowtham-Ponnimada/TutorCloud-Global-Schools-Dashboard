@@ -61,7 +61,20 @@ if _render_rb:
 
 from utils.uae_page_renderer import render_uae_home
 from utils.us_page_renderer import render_us_home
-_current_region = st.session_state.get("selected_region", "India")
+def _resolve_region() -> str:
+    qp_region = st.query_params.get("region", None)
+    if isinstance(qp_region, list):
+        qp_region = qp_region[0] if qp_region else None
+
+    region = st.session_state.get("selected_region") or qp_region or "India"
+
+    if qp_region and region != qp_region:
+        st.session_state["selected_region"] = qp_region
+        region = qp_region
+
+    return region
+
+_current_region = _resolve_region()
 if _current_region == "UAE":
     render_uae_home()
     st.stop()
@@ -326,7 +339,7 @@ def inject_card_css():
     st.markdown(css, unsafe_allow_html=True)
 
 inject_card_css()
-@st.cache_data(ttl=3600, show_spinner=False)
+# TEMP_HOTFIX: cache disabled on Home to avoid Streamlit tokenize/inspect failure
 def get_national_summary():
     """Fetch national-level summary statistics."""
     conn = get_db_connection()
@@ -405,7 +418,7 @@ def get_national_summary():
             conn.close()
         return None
 
-@st.cache_data(ttl=3600, show_spinner=False)
+# TEMP_HOTFIX: cache disabled on Home to avoid Streamlit tokenize/inspect failure
 def get_top_states_by_schools(limit=10):
     """Fetch top states by school count."""
     conn = get_db_connection()
@@ -433,7 +446,7 @@ def get_top_states_by_schools(limit=10):
             conn.close()
         return pd.DataFrame()
 
-@st.cache_data(ttl=3600, show_spinner=False)
+# TEMP_HOTFIX: cache disabled on Home to avoid Streamlit tokenize/inspect failure
 def get_top_states_by_students(limit=20):
     """Fetch top 20 states by student enrollment."""
     conn = get_db_connection()
