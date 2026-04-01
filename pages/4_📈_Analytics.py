@@ -58,12 +58,12 @@ if _render_rb:
 
 from utils.uae_page_renderer import render_uae_analytics
 from utils.us_page_renderer import render_us_analytics
-from utils.au_page_renderer import render_au_analytics
 _current_region = st.session_state.get("selected_region", "India")
 if _current_region == "UAE":
     render_uae_analytics()
     st.stop()
 elif _current_region == "Australia":
+    from utils.au_page_renderer import render_au_analytics
     render_au_analytics()
     st.stop()
 elif _current_region == "United States":

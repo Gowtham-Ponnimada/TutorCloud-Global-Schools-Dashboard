@@ -7,7 +7,6 @@ from au_phase1_final_load import db_engine
 from services.au_dashboard_service import AUDashboardService
 
 
-@st.cache_resource
 def _get_service() -> AUDashboardService:
     return AUDashboardService(db_engine(), school_year="2025")
 

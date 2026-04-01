@@ -183,12 +183,12 @@ if _render_rb:
 
 from utils.uae_page_renderer import render_uae_state_dashboard
 from utils.us_page_renderer import render_us_state_dashboard
-from utils.au_page_renderer import render_au_state_dashboard
 _current_region = st.session_state.get("selected_region", "India")
 if _current_region == "UAE":
     render_uae_state_dashboard()
     st.stop()
 elif _current_region == "Australia":
+    from utils.au_page_renderer import render_au_state_dashboard
     render_au_state_dashboard()
     st.stop()
 elif _current_region == "United States":
