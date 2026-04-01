@@ -1,0 +1,276 @@
+COUNTRY_NAME: Australia
+SCHOOL_YEAR: "2025"
+SOURCE_SYSTEM: ACARA_2025
+PRIMARY_BENCHMARK_SYSTEM: ABS_2025
+CANONICAL_SCHOOL_ID_RULE: "COALESCE(rolled_school_id, acara_sml_id, school_age_id)"
+CANONICAL_DISTRICT_RULE: "state_abbr || ':' || COALESCE(NULLIF(lga_code,''), md5(state_abbr || '|' || COALESCE(lga_name,'Unknown LGA')))"
+CANONICAL_DISTRICT_NAME_RULE: "COALESCE(NULLIF(lga_name,''), 'Unknown LGA')"
+
+SOURCE_FILES:
+  school_profile_2025:
+    url: https://dataandreporting.blob.core.windows.net/anrdataportal/Data-Access-Program/School%20Profile%202025.xlsx
+    worksheet: SchoolProfile 2025
+  school_location_2025:
+    url: https://dataandreporting.blob.core.windows.net/anrdataportal/Data-Access-Program/School%20Location%202025.xlsx
+    worksheet: SchoolLocations 2025
+  enrolments_by_grade_2025:
+    url: https://dataandreporting.blob.core.windows.net/anrdataportal/Data-Access-Program/Enrolments%20by%20Grade%202025.xlsx
+    worksheet: EnrolmentsByGrade 2025
+  abs_benchmark:
+    url: https://www.abs.gov.au/statistics/people/education/schools/latest-release
+
+VALUE_NORMALIZATION:
+  trim_whitespace: true
+  empty_string_to_null: true
+  numeric_commas_remove: true
+  percent_fields_store_as_numeric_pct: true
+  offered_boolean_map:
+    "1": true
+    "0": false
+    "Y": true
+    "N": false
+    "Yes": true
+    "No": false
+
+STATE_NORMALIZATION:
+  NSW: New South Wales
+  VIC: Victoria
+  QLD: Queensland
+  WA: Western Australia
+  SA: South Australia
+  TAS: Tasmania
+  ACT: Australian Capital Territory
+  NT: Northern Territory
+
+MANAGEMENT_NORMALIZATION:
+  Government: Government
+  G: Government
+  Catholic: Catholic
+  C: Catholic
+  Independent: Independent
+  I: Independent
+
+SCHOOL_LEVEL_NORMALIZATION:
+  Primary: Primary
+  Secondary: Secondary
+  Combined: Combined
+  Special: Special
+
+REMOTENESS_NORMALIZATION:
+  "1 - Major Cities of Australia": Major Cities
+  "2 - Inner Regional Australia": Inner Regional
+  "3 - Outer Regional Australia": Outer Regional
+  "4 - Remote Australia": Remote
+  "5 - Very Remote Australia": Very Remote
+
+GRADE_NORMALIZATION:
+  PRE2:
+    label: Two years before Year 1
+    source_offered: pre_year1_2_offered
+    source_enrolments: pre_year1_2_enrolments
+    sort_order: 0
+  PRE1:
+    label: One year before Year 1
+    source_offered: pre_year1_1_offered
+    source_enrolments: pre_year1_1_enrolments
+    sort_order: 1
+  Y1:
+    label: Year 1
+    source_offered: year_1_offered
+    source_enrolments: year_1_enrolments
+    sort_order: 2
+  Y2:
+    label: Year 2
+    source_offered: year_2_offered
+    source_enrolments: year_2_enrolments
+    sort_order: 3
+  Y3:
+    label: Year 3
+    source_offered: year_3_offered
+    source_enrolments: year_3_enrolments
+    sort_order: 4
+  Y4:
+    label: Year 4
+    source_offered: year_4_offered
+    source_enrolments: year_4_enrolments
+    sort_order: 5
+  Y5:
+    label: Year 5
+    source_offered: year_5_offered
+    source_enrolments: year_5_enrolments
+    sort_order: 6
+  Y6:
+    label: Year 6
+    source_offered: year_6_offered
+    source_enrolments: year_6_enrolments
+    sort_order: 7
+  Y7:
+    label: Year 7
+    source_offered: year_7_offered
+    source_enrolments: year_7_enrolments
+    sort_order: 8
+  Y8:
+    label: Year 8
+    source_offered: year_8_offered
+    source_enrolments: year_8_enrolments
+    sort_order: 9
+  Y9:
+    label: Year 9
+    source_offered: year_9_offered
+    source_enrolments: year_9_enrolments
+    sort_order: 10
+  Y10:
+    label: Year 10
+    source_offered: year_10_offered
+    source_enrolments: year_10_enrolments
+    sort_order: 11
+  Y11:
+    label: Year 11
+    source_offered: year_11_offered
+    source_enrolments: year_11_enrolments
+    sort_order: 12
+  Y12:
+    label: Year 12
+    source_offered: year_12_offered
+    source_enrolments: year_12_enrolments
+    sort_order: 13
+  PUG:
+    label: Primary Ungraded
+    source_offered: primary_ungraded_offered
+    source_enrolments: primary_ungraded_enrolments
+    sort_order: 14
+  SUG:
+    label: Secondary Ungraded
+    source_offered: secondary_ungraded_offered
+    source_enrolments: secondary_ungraded_enrolments
+    sort_order: 15
+
+SOURCE_TO_STAGE_TO_FINAL:
+  school_profile_2025:
+    worksheet: SchoolProfile 2025
+    fields:
+      Calendar Year: {stage: calendar_year, final: school_year, type: text}
+      ACARA SML ID: {stage: acara_sml_id, final: acara_sml_id, type: text}
+      Location AGE ID: {stage: location_age_id, final: location_age_id, type: text}
+      School AGE ID: {stage: school_age_id, final: school_age_id, type: text}
+      School Name: {stage: school_name, final: school_name, type: text}
+      Suburb: {stage: suburb, final: suburb, type: text}
+      State: {stage: state, final: state_abbr/state_name, type: text}
+      Postcode: {stage: postcode, final: postcode, type: text}
+      School Sector: {stage: school_sector, final: management_type, type: text}
+      School Type: {stage: school_type, final: school_level/school_type_raw, type: text}
+      Campus Type: {stage: campus_type, final: campus_type, type: text}
+      Rolled Reporting Description: {stage: rolled_reporting_description, final: reporting_model, type: text}
+      School URL: {stage: school_url, final: school_url, type: text}
+      Governing Body: {stage: governing_body, final: governing_body, type: text}
+      Governing Body URL: {stage: governing_body_url, final: governing_body_url, type: text}
+      Year Range: {stage: year_range, final: year_range, type: text}
+      Geolocation: {stage: geolocation, final: geolocation_label, type: text}
+      ICSEA: {stage: icsea, final: icsea, type: numeric}
+      ICSEA Percentile: {stage: icsea_percentile, final: icsea_percentile, type: numeric}
+      Bottom SEA Quarter (%): {stage: sea_bottom_pct, final: sea_bottom_pct, type: numeric}
+      Lower Middle SEA Quarter (%): {stage: sea_lower_middle_pct, final: sea_lower_middle_pct, type: numeric}
+      Upper Middle SEA Quarter (%): {stage: sea_upper_middle_pct, final: sea_upper_middle_pct, type: numeric}
+      Top SEA Quarter (%): {stage: sea_top_pct, final: sea_top_pct, type: numeric}
+      Teaching Staff: {stage: teaching_staff, final: teaching_staff, type: numeric}
+      Full Time Equivalent Teaching Staff: {stage: fte_teaching_staff, final: fte_teaching_staff, type: numeric}
+      Non-Teaching Staff: {stage: non_teaching_staff, final: non_teaching_staff, type: numeric}
+      Full Time Equivalent Non-Teaching Staff: {stage: fte_non_teaching_staff, final: fte_non_teaching_staff, type: numeric}
+      Total Enrolments: {stage: total_enrolments, final: total_students, type: integer}
+      Girls Enrolments: {stage: girls_enrolments, final: girls_students, type: integer}
+      Boys Enrolments: {stage: boys_enrolments, final: boys_students, type: integer}
+      Full Time Equivalent Enrolments: {stage: fte_enrolments, final: fte_students, type: numeric}
+      Indigenous Enrolments (%): {stage: indigenous_enrolments_pct, final: indigenous_pct, type: numeric}
+      Language Background Other Than English - Yes (%): {stage: lbote_yes_pct, final: lbote_yes_pct, type: numeric}
+      Language Background Other Than English - No (%): {stage: lbote_no_pct, final: lbote_no_pct, type: numeric}
+      Language Background Other Than English - Not Stated (%): {stage: lbote_not_stated_pct, final: lbote_not_stated_pct, type: numeric}
+
+  school_location_2025:
+    worksheet: SchoolLocations 2025
+    fields:
+      Calendar Year: {stage: calendar_year, final: school_year, type: text}
+      ACARA SML ID: {stage: acara_sml_id, final: acara_sml_id, type: text}
+      Location AGE ID: {stage: location_age_id, final: location_age_id, type: text}
+      School AGE ID: {stage: school_age_id, final: school_age_id, type: text}
+      Rolled School ID: {stage: rolled_school_id, final: rolled_school_id/school_id, type: text}
+      School Name: {stage: school_name, final: school_name, type: text}
+      School Sector: {stage: school_sector, final: management_type, type: text}
+      School Type: {stage: school_type, final: school_level/school_type_raw, type: text}
+      Special school: {stage: special_school, final: special_school_flag, type: boolean}
+      Campus Type: {stage: campus_type, final: campus_type, type: text}
+      Suburb: {stage: suburb, final: suburb/city_name, type: text}
+      State: {stage: state, final: state_abbr/state_name, type: text}
+      Postcode: {stage: postcode, final: postcode, type: text}
+      Latitude: {stage: latitude, final: latitude, type: numeric}
+      Longitude: {stage: longitude, final: longitude, type: numeric}
+      ABS Remoteness Area: {stage: abs_remoteness_area, final: abs_remoteness_area_code, type: text}
+      ABS Remoteness Area Name: {stage: abs_remoteness_area_name, final: abs_remoteness_area_name, type: text}
+      Meshblock: {stage: meshblock, final: meshblock, type: text}
+      Statistical Area 1: {stage: sa1_code, final: sa1_code, type: text}
+      Statistical Area 2: {stage: sa2_code, final: sa2_code, type: text}
+      Statistical Area 2 Name: {stage: sa2_name, final: sa2_name, type: text}
+      Statistical Area 3: {stage: sa3_code, final: sa3_code, type: text}
+      Statistical Area 3 Name: {stage: sa3_name, final: sa3_name, type: text}
+      Statistical Area 4: {stage: sa4_code, final: sa4_code, type: text}
+      Statistical Area 4 Name: {stage: sa4_name, final: sa4_name, type: text}
+      Local Government Area: {stage: lga_code, final: lga_code/district_id, type: text}
+      Local Government Area Name: {stage: lga_name, final: lga_name/district_name, type: text}
+      State Electoral Divisions: {stage: state_electoral_division_code, final: state_electoral_division_code, type: text}
+      State Electoral Divisions Name: {stage: state_electoral_division_name, final: state_electoral_division_name, type: text}
+      Commonwealth Electoral Divisions: {stage: commonwealth_electoral_division_code, final: commonwealth_electoral_division_code, type: text}
+      Commonwealth Electoral Divisions Name: {stage: commonwealth_electoral_division_name, final: commonwealth_electoral_division_name, type: text}
+
+  enrolments_by_grade_2025:
+    worksheet: EnrolmentsByGrade 2025
+    fields:
+      Calendar Year: {stage: calendar_year, final: school_year, type: text}
+      ACARA SML ID: {stage: acara_sml_id, final: acara_sml_id, type: text}
+      Location AGE ID: {stage: location_age_id, final: location_age_id, type: text}
+      School AGE ID: {stage: school_age_id, final: school_age_id, type: text}
+      School Name: {stage: school_name, final: school_name, type: text}
+      Suburb: {stage: suburb, final: suburb, type: text}
+      State: {stage: state, final: state_abbr/state_name, type: text}
+      Postcode: {stage: postcode, final: postcode, type: text}
+      School Sector: {stage: school_sector, final: management_type, type: text}
+      School Type: {stage: school_type, final: school_level, type: text}
+      Campus Type: {stage: campus_type, final: campus_type, type: text}
+      Rolled Reporting Description: {stage: rolled_reporting_description, final: reporting_model, type: text}
+      Two years before Year 1 Offered: {stage: pre_year1_2_offered, final: PRE2.offered_flag, type: boolean}
+      Two years before Year 1 Enrolments: {stage: pre_year1_2_enrolments, final: PRE2.enrolled_students, type: integer}
+      One year before Year 1 Offered: {stage: pre_year1_1_offered, final: PRE1.offered_flag, type: boolean}
+      One year before Year 1 Enrolments: {stage: pre_year1_1_enrolments, final: PRE1.enrolled_students, type: integer}
+      Year 1 Offered: {stage: year_1_offered, final: Y1.offered_flag, type: boolean}
+      Year 1 Enrolments: {stage: year_1_enrolments, final: Y1.enrolled_students, type: integer}
+      Year 2 Offered: {stage: year_2_offered, final: Y2.offered_flag, type: boolean}
+      Year 2 Enrolments: {stage: year_2_enrolments, final: Y2.enrolled_students, type: integer}
+      Year 3 Offered: {stage: year_3_offered, final: Y3.offered_flag, type: boolean}
+      Year 3 Enrolments: {stage: year_3_enrolments, final: Y3.enrolled_students, type: integer}
+      Year 4 Offered: {stage: year_4_offered, final: Y4.offered_flag, type: boolean}
+      Year 4 Enrolments: {stage: year_4_enrolments, final: Y4.enrolled_students, type: integer}
+      Year 5 Offered: {stage: year_5_offered, final: Y5.offered_flag, type: boolean}
+      Year 5 Enrolments: {stage: year_5_enrolments, final: Y5.enrolled_students, type: integer}
+      Year 6 Offered: {stage: year_6_offered, final: Y6.offered_flag, type: boolean}
+      Year 6 Enrolments: {stage: year_6_enrolments, final: Y6.enrolled_students, type: integer}
+      Year 7 Offered: {stage: year_7_offered, final: Y7.offered_flag, type: boolean}
+      Year 7 Enrolments: {stage: year_7_enrolments, final: Y7.enrolled_students, type: integer}
+      Year 8 Offered: {stage: year_8_offered, final: Y8.offered_flag, type: boolean}
+      Year 8 Enrolments: {stage: year_8_enrolments, final: Y8.enrolled_students, type: integer}
+      Year 9 Offered: {stage: year_9_offered, final: Y9.offered_flag, type: boolean}
+      Year 9 Enrolments: {stage: year_9_enrolments, final: Y9.enrolled_students, type: integer}
+      Year 10 Offered: {stage: year_10_offered, final: Y10.offered_flag, type: boolean}
+      Year 10 Enrolments: {stage: year_10_enrolments, final: Y10.enrolled_students, type: integer}
+      Year 11 Offered: {stage: year_11_offered, final: Y11.offered_flag, type: boolean}
+      Year 11 Enrolments: {stage: year_11_enrolments, final: Y11.enrolled_students, type: integer}
+      Year 12 Offered: {stage: year_12_offered, final: Y12.offered_flag, type: boolean}
+      Year 12 Enrolments: {stage: year_12_enrolments, final: Y12.enrolled_students, type: integer}
+      Primary Ungraded Offered: {stage: primary_ungraded_offered, final: PUG.offered_flag, type: boolean}
+      Primary Ungraded Enrolments: {stage: primary_ungraded_enrolments, final: PUG.enrolled_students, type: integer}
+      Secondary Ungraded Offered: {stage: secondary_ungraded_offered, final: SUG.offered_flag, type: boolean}
+      Secondary Ungraded Enrolments: {stage: secondary_ungraded_enrolments, final: SUG.enrolled_students, type: integer}
+      Total Enrolments: {stage: total_enrolments, final: validation_only, type: integer}
+
+DATA_QUALITY_RULES:
+  canonical_school_grain: Use rolled school reporting school-year grain.
+  location_row_choice: Prefer Single Entity, then Head Campus, then Sub-Campus when deduplicating rolled locations.
+  grade_suppression_rule: If school total enrolments < 5, grade-level values may be suppressed and should remain null.
+  profile_vs_abs_note: ACARA profile totals may differ from ABS/NSSC due to scope differences; do not force-fit row-level data.

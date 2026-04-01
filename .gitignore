@@ -185,3 +185,7 @@ data/us_pss/
 
 # NCES PSS local downloads
 data/us_pss/
+
+data/au/
+reports/au/
+au_loader_renderer_pack/
