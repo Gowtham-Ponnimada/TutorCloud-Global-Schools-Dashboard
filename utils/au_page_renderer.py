@@ -10,16 +10,12 @@ import streamlit as st
 from au_phase1_final_load import db_engine
 from services.au_dashboard_service import AUDashboardService
 
-# Optional shared colors from app; safe fallback if unavailable
 try:
     from ui_components import COLORS as APP_COLORS
 except Exception:
     APP_COLORS = {}
 
 
-# --------------------------------------------------
-# INDIA-VISUAL-PARITY THEME FOR AUSTRALIA DASHBOARD
-# --------------------------------------------------
 INDIA_UI = {
     "primary_blue": APP_COLORS.get("primary", "#1E88E5"),
     "primary_blue_dark": APP_COLORS.get("secondary", "#1565C0"),
@@ -59,11 +55,11 @@ COLUMN_TITLES = {
     "total_students": "Total Students",
     "girls_students": "Girls",
     "boys_students": "Boys",
-    "fte_teaching_staff": "FTE Teaching Staff",
+    "fte_teaching_staff": "Total Teachers",
     "student_teacher_ratio": "PTR",
-    "weighted_avg_icsea": "Weighted Avg ICSEA",
-    "weighted_indigenous_pct": "Weighted Indigenous %",
-    "weighted_lbote_yes_pct": "Weighted LBOTE %",
+    "weighted_avg_icsea": "Avg ICSEA",
+    "weighted_indigenous_pct": "Indigenous %",
+    "weighted_lbote_yes_pct": "LBOTE %",
     "grade_code": "Grade Code",
     "grade_label": "Grade Label",
     "enrolled_students": "Enrolled Students",
@@ -75,9 +71,9 @@ INT_LIKE_COLUMNS = {
     "girls_students",
     "boys_students",
     "enrolled_students",
+    "fte_teaching_staff",
 }
 
-FLOAT_1_COLUMNS = {"fte_teaching_staff"}
 FLOAT_2_COLUMNS = {
     "weighted_avg_icsea",
     "weighted_indigenous_pct",
@@ -138,6 +134,15 @@ def _is_missing(v: Any) -> bool:
         return v is None
 
 
+def _num(v: Any) -> float:
+    if _is_missing(v):
+        return 0.0
+    try:
+        return float(v)
+    except Exception:
+        return 0.0
+
+
 def _fmt_int(v: Any) -> str:
     if _is_missing(v):
         return "N/A"
@@ -172,6 +177,7 @@ def _fmt_ptr(v: Any) -> str:
         return f"{int(round(float(v)))}:1"
     except Exception:
         return str(v)
+
 
 def _fmt_metric_value(metric_key: str, value: Any) -> str:
     if metric_key in {"total_states", "schools", "total_schools", "students_per_school"}:
@@ -226,8 +232,6 @@ def _format_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
             out[col] = out[col].apply(_fmt_ptr)
         elif col in INT_LIKE_COLUMNS:
             out[col] = out[col].apply(_fmt_int)
-        elif col in FLOAT_1_COLUMNS:
-            out[col] = out[col].apply(lambda x: _fmt_float(x, 1))
         elif col in FLOAT_2_COLUMNS:
             if "pct" in col:
                 out[col] = out[col].apply(lambda x: _fmt_pct(x, 2))
@@ -370,11 +374,10 @@ def _render_subsection(title: str, subtitle: Optional[str] = None) -> None:
 
 
 # -----------------------------
-# KPI BUILDERS (INDIA STYLE)
+# KPI BUILDERS
 # -----------------------------
 def _build_home_kpis(summary: Dict[str, Any], states_df: pd.DataFrame) -> List[Dict[str, Any]]:
     total_states = states_df["state_name"].nunique() if not states_df.empty and "state_name" in states_df.columns else 0
-
     total_students = summary.get("total_students")
     total_schools = summary.get("schools")
     total_teachers = summary.get("fte_teaching_staff")
@@ -388,53 +391,40 @@ def _build_home_kpis(summary: Dict[str, Any], states_df: pd.DataFrame) -> List[D
         students_per_school = None
 
     return [
-        {"label": "TOTAL STATES/UTS", "value": _fmt_metric_value("total_states", total_states), "metric_key": "total_states"},
-        {"label": "TOTAL SCHOOLS", "value": _fmt_metric_value("total_schools", total_schools), "metric_key": "total_schools"},
-        {"label": "TOTAL STUDENTS", "value": _fmt_metric_value("total_students", total_students), "metric_key": "total_students"},
-        {"label": "TOTAL TEACHERS", "value": _fmt_metric_value("total_teachers", total_teachers), "metric_key": "total_teachers"},
-        {"label": "PTR (NATIONAL)", "value": _fmt_metric_value("student_teacher_ratio", ptr), "metric_key": "student_teacher_ratio"},
-        {"label": "STUDENTS/SCHOOL", "value": _fmt_metric_value("students_per_school", students_per_school), "metric_key": "students_per_school"},
+        {"label": "TOTAL STATES/UTS", "value": _fmt_metric_value("total_states", total_states)},
+        {"label": "TOTAL SCHOOLS", "value": _fmt_metric_value("total_schools", total_schools)},
+        {"label": "TOTAL STUDENTS", "value": _fmt_metric_value("total_students", total_students)},
+        {"label": "TOTAL TEACHERS", "value": _fmt_metric_value("total_teachers", total_teachers)},
+        {"label": "PTR (NATIONAL)", "value": _fmt_metric_value("student_teacher_ratio", ptr)},
+        {"label": "STUDENTS/SCHOOL", "value": _fmt_metric_value("students_per_school", students_per_school)},
     ]
 
 
-def _build_state_kpis(state_summary: Dict[str, Any]) -> List[Dict[str, Any]]:
-    total_students = state_summary.get("total_students")
-    total_schools = state_summary.get("schools")
-    total_teachers = state_summary.get("fte_teaching_staff")
-    ptr = state_summary.get("student_teacher_ratio")
-
-    students_per_school = None
-    try:
-        if total_students and total_schools:
-            students_per_school = round(float(total_students) / float(total_schools))
-    except Exception:
-        students_per_school = None
-
+def _build_state_kpis(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [
-        {"label": "TOTAL SCHOOLS", "value": _fmt_metric_value("total_schools", total_schools), "metric_key": "total_schools"},
-        {"label": "TOTAL STUDENTS", "value": _fmt_metric_value("total_students", total_students), "metric_key": "total_students"},
-        {"label": "TOTAL TEACHERS", "value": _fmt_metric_value("total_teachers", total_teachers), "metric_key": "total_teachers"},
-        {"label": "PTR (STATE)", "value": _fmt_metric_value("student_teacher_ratio", ptr), "metric_key": "student_teacher_ratio"},
-        {"label": "AVG ICSEA", "value": _fmt_metric_value("weighted_avg_icsea", state_summary.get("weighted_avg_icsea")), "metric_key": "weighted_avg_icsea"},
-        {"label": "LBOTE %", "value": _fmt_metric_value("weighted_lbote_yes_pct", state_summary.get("weighted_lbote_yes_pct")), "metric_key": "weighted_lbote_yes_pct"},
+        {"label": "TOTAL SCHOOLS", "value": _fmt_metric_value("total_schools", metrics.get("schools"))},
+        {"label": "TOTAL STUDENTS", "value": _fmt_metric_value("total_students", metrics.get("total_students"))},
+        {"label": "TOTAL TEACHERS", "value": _fmt_metric_value("total_teachers", metrics.get("fte_teaching_staff"))},
+        {"label": "PTR (STATE)", "value": _fmt_metric_value("student_teacher_ratio", metrics.get("student_teacher_ratio"))},
+        {"label": "GIRLS", "value": _fmt_metric_value("girls_students", metrics.get("girls_students"))},
+        {"label": "BOYS", "value": _fmt_metric_value("boys_students", metrics.get("boys_students"))},
     ]
 
 
 def _build_analytics_kpis(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [
-        {"label": "GIRLS", "value": _fmt_metric_value("girls_students", summary.get("girls_students")), "metric_key": "girls_students"},
-        {"label": "BOYS", "value": _fmt_metric_value("boys_students", summary.get("boys_students")), "metric_key": "boys_students"},
-        {"label": "AVG ICSEA", "value": _fmt_metric_value("weighted_avg_icsea", summary.get("weighted_avg_icsea")), "metric_key": "weighted_avg_icsea"},
-        {"label": "INDIGENOUS %", "value": _fmt_metric_value("weighted_indigenous_pct", summary.get("weighted_indigenous_pct")), "metric_key": "weighted_indigenous_pct"},
-        {"label": "LBOTE %", "value": _fmt_metric_value("weighted_lbote_yes_pct", summary.get("weighted_lbote_yes_pct")), "metric_key": "weighted_lbote_yes_pct"},
-        {"label": "PTR (NATIONAL)", "value": _fmt_metric_value("student_teacher_ratio", summary.get("student_teacher_ratio")), "metric_key": "student_teacher_ratio"},
+        {"label": "GIRLS", "value": _fmt_metric_value("girls_students", summary.get("girls_students"))},
+        {"label": "BOYS", "value": _fmt_metric_value("boys_students", summary.get("boys_students"))},
+        {"label": "AVG ICSEA", "value": _fmt_metric_value("weighted_avg_icsea", summary.get("weighted_avg_icsea"))},
+        {"label": "INDIGENOUS %", "value": _fmt_metric_value("weighted_indigenous_pct", summary.get("weighted_indigenous_pct"))},
+        {"label": "LBOTE %", "value": _fmt_metric_value("weighted_lbote_yes_pct", summary.get("weighted_lbote_yes_pct"))},
+        {"label": "PTR (NATIONAL)", "value": _fmt_metric_value("student_teacher_ratio", summary.get("student_teacher_ratio"))},
     ]
 
 
 def _render_kpi_cards(cards: List[Dict[str, Any]], per_row: int = 3) -> None:
     if not cards:
         return
-
     for i in range(0, len(cards), per_row):
         row = cards[i:i + per_row]
         cols = st.columns(per_row)
@@ -451,6 +441,102 @@ def _render_kpi_cards(cards: List[Dict[str, Any]], per_row: int = 3) -> None:
                 )
         if i + per_row < len(cards):
             st.markdown('<div class="au-grid-gap"></div>', unsafe_allow_html=True)
+
+
+# -----------------------------
+# AGGREGATION HELPERS
+# -----------------------------
+def _aggregate_filtered_metrics(df: pd.DataFrame) -> Dict[str, Any]:
+    if df is None or df.empty:
+        return {
+            "schools": 0,
+            "total_students": 0,
+            "girls_students": 0,
+            "boys_students": 0,
+            "fte_teaching_staff": 0,
+            "student_teacher_ratio": None,
+        }
+
+    schools = df["school_id"].nunique() if "school_id" in df.columns else len(df)
+    total_students = _num(df["total_students"].fillna(0).sum()) if "total_students" in df.columns else 0
+    girls_students = _num(df["girls_students"].fillna(0).sum()) if "girls_students" in df.columns else None
+    boys_students = _num(df["boys_students"].fillna(0).sum()) if "boys_students" in df.columns else None
+    teachers = _num(df["fte_teaching_staff"].fillna(0).sum()) if "fte_teaching_staff" in df.columns else 0
+    ptr = (total_students / teachers) if teachers and total_students else None
+
+    return {
+        "schools": schools,
+        "total_students": total_students,
+        "girls_students": girls_students,
+        "boys_students": boys_students,
+        "fte_teaching_staff": teachers,
+        "student_teacher_ratio": ptr,
+    }
+
+
+def _group_school_metrics(df: pd.DataFrame, group_col: str) -> pd.DataFrame:
+    if df is None or df.empty or group_col not in df.columns:
+        return pd.DataFrame()
+
+    agg_map = {}
+    for col in ["total_students", "girls_students", "boys_students", "fte_teaching_staff"]:
+        if col in df.columns:
+            agg_map[col] = "sum"
+    if "school_id" in df.columns:
+        agg_map["school_id"] = pd.Series.nunique
+
+    grouped = df.groupby(group_col, dropna=False).agg(agg_map).reset_index()
+    if "school_id" in grouped.columns:
+        grouped = grouped.rename(columns={"school_id": "schools"})
+    else:
+        grouped["schools"] = 0
+
+    if "total_students" in grouped.columns and "fte_teaching_staff" in grouped.columns:
+        grouped["student_teacher_ratio"] = grouped.apply(
+            lambda r: (r["total_students"] / r["fte_teaching_staff"]) if _num(r.get("fte_teaching_staff")) > 0 else None,
+            axis=1,
+        )
+
+    if group_col == "district_name":
+        order_cols = [group_col, "schools", "total_students", "girls_students", "boys_students", "fte_teaching_staff", "student_teacher_ratio"]
+    else:
+        order_cols = [group_col, "schools", "total_students", "girls_students", "boys_students", "fte_teaching_staff", "student_teacher_ratio"]
+
+    final_cols = [c for c in order_cols if c in grouped.columns]
+    grouped = grouped[final_cols]
+    if "total_students" in grouped.columns:
+        grouped = grouped.sort_values("total_students", ascending=False, na_position="last")
+    return grouped
+
+
+def _weighted_average(df: pd.DataFrame, value_col: str, weight_col: str = "total_students") -> Optional[float]:
+    if df is None or df.empty or value_col not in df.columns or weight_col not in df.columns:
+        return None
+    valid = df[[value_col, weight_col]].dropna()
+    if valid.empty:
+        return None
+    total_weight = valid[weight_col].sum()
+    if total_weight == 0:
+        return None
+    return float((valid[value_col] * valid[weight_col]).sum() / total_weight)
+
+
+def _analytics_summary_from_states(states_df: pd.DataFrame) -> Dict[str, Any]:
+    if states_df is None or states_df.empty:
+        return {}
+    out = {
+        "girls_students": _num(states_df["girls_students"].sum()) if "girls_students" in states_df.columns else None,
+        "boys_students": _num(states_df["boys_students"].sum()) if "boys_students" in states_df.columns else None,
+        "weighted_avg_icsea": _weighted_average(states_df, "weighted_avg_icsea"),
+        "weighted_indigenous_pct": _weighted_average(states_df, "weighted_indigenous_pct"),
+        "weighted_lbote_yes_pct": _weighted_average(states_df, "weighted_lbote_yes_pct"),
+        "student_teacher_ratio": None,
+    }
+    if {"total_students", "fte_teaching_staff"}.issubset(set(states_df.columns)):
+        students = _num(states_df["total_students"].sum())
+        teachers = _num(states_df["fte_teaching_staff"].sum())
+        out["student_teacher_ratio"] = (students / teachers) if teachers else None
+    return out
 
 
 # -----------------------------
@@ -517,7 +603,7 @@ def _render_top_states_by_schools(states_df: pd.DataFrame) -> None:
         return
     df = states_df.sort_values("schools", ascending=False).head(10)
     fig = px.bar(df, x="state_name", y="schools", color_discrete_sequence=[INDIA_UI["schools"]])
-    fig = _style_chart(fig, title="Top 10 States by School Count", x_title="State Name", y_title="Schools", height=420)
+    fig = _style_chart(fig, title="", x_title="State Name", y_title="Schools", height=420)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -575,32 +661,72 @@ def _render_indicator_chart(states_df: pd.DataFrame) -> None:
 
 
 # -----------------------------
-# STATE RESOLUTION
+# SIDEBAR FILTERS
 # -----------------------------
-def _resolve_state(default: Optional[str] = None) -> Optional[str]:
+def _render_state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### State Dashboard Filters")
+
+    state_options = states_df["state_name"].dropna().tolist() if "state_name" in states_df.columns else []
+    default_state = state_options[0] if state_options else None
     query_state = None
     try:
         query_state = st.query_params.get("state")
     except Exception:
         query_state = None
+    if query_state and query_state in state_options:
+        default_state = query_state
+    if "au_selected_state" in st.session_state and st.session_state["au_selected_state"] in state_options:
+        default_state = st.session_state["au_selected_state"]
 
-    if query_state:
-        st.session_state["au_selected_state"] = query_state
-        return query_state
+    selected_state = st.sidebar.selectbox(
+        "State",
+        state_options,
+        index=state_options.index(default_state) if default_state in state_options else 0,
+        key="au_sidebar_state",
+    ) if state_options else None
 
-    if "au_selected_state" in st.session_state:
-        return st.session_state["au_selected_state"]
-
-    return default
-
-
-def _update_state_query_param(state_name: Optional[str]) -> None:
-    if not state_name:
-        return
+    st.session_state["au_selected_state"] = selected_state
     try:
-        st.query_params["state"] = state_name
+        if selected_state:
+            st.query_params["state"] = selected_state
     except Exception:
         pass
+
+    district_df = _safe_district_df(selected_state) if selected_state else pd.DataFrame()
+    district_options = sorted([d for d in district_df.get("district_name", pd.Series(dtype=str)).dropna().unique().tolist() if d]) if not district_df.empty else []
+
+    filter_options = _get_service().get_filter_options() or {}
+    management_types = filter_options.get("management_types", []) or []
+    school_levels = filter_options.get("school_levels", []) or []
+
+    selected_district = st.sidebar.selectbox("District", ["All"] + district_options, key="au_sidebar_district")
+    selected_management = st.sidebar.selectbox("Management Type", ["All"] + management_types, key="au_sidebar_mgmt")
+    selected_level = st.sidebar.selectbox("School Level", ["All"] + school_levels, key="au_sidebar_level")
+    search = st.sidebar.text_input("Search School", value="", key="au_sidebar_search")
+
+    return {
+        "state_name": selected_state,
+        "district_name": None if selected_district == "All" else selected_district,
+        "management_type": None if selected_management == "All" else selected_management,
+        "school_level": None if selected_level == "All" else selected_level,
+        "delivery_model": None,
+        "search": search or None,
+        "limit": 20000,
+        "offset": 0,
+    }
+
+
+def _render_analytics_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Analytics Filters")
+
+    state_options = ["All States"] + (states_df["state_name"].dropna().tolist() if "state_name" in states_df.columns else [])
+    selected_state = st.sidebar.selectbox("State Scope", state_options, key="au_analytics_state_scope")
+
+    return {
+        "selected_state": None if selected_state == "All States" else selected_state,
+    }
 
 
 # -----------------------------
@@ -620,7 +746,7 @@ def render_au_home() -> None:
 
     st.markdown("<div style='height: 22px;'></div>", unsafe_allow_html=True)
 
-    _render_subsection("🏆 Top States by School Count")
+    _render_subsection("🏆 Top 10 States by School Count")
     _render_top_states_by_schools(states_df)
 
     st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
@@ -645,95 +771,85 @@ def render_au_state_dashboard() -> None:
         st.warning("No Australia state data is available.")
         return
 
-    state_options = states_df["state_name"].dropna().tolist()
-    default_state = _resolve_state(default=state_options[0] if state_options else None)
-    default_index = state_options.index(default_state) if default_state in state_options else 0
+    filters = _render_state_sidebar_filters(states_df)
+    selected_state = filters.get("state_name")
 
-    selected_state = st.selectbox("Select State", state_options, index=default_index, key="au_state_dashboard_selector")
-    st.session_state["au_selected_state"] = selected_state
-    _update_state_query_param(selected_state)
+    filtered_schools_df = _safe_school_df(**filters)
+    filtered_metrics = _aggregate_filtered_metrics(filtered_schools_df)
 
-    selected_state_row = states_df.loc[states_df["state_name"] == selected_state]
-    state_summary = selected_state_row.iloc[0].to_dict() if not selected_state_row.empty else {}
-
-    state_kpis = _build_state_kpis(state_summary)
+    state_kpis = _build_state_kpis(filtered_metrics)
     _render_kpi_cards(state_kpis, per_row=3)
 
-    district_df = _safe_district_df(selected_state)
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='height: 22px;'></div>", unsafe_allow_html=True)
-    _render_subsection(f"District Summary - {selected_state}")
+    district_summary_df = _group_school_metrics(filtered_schools_df, "district_name") if "district_name" in filtered_schools_df.columns else pd.DataFrame()
 
-    district_cols = [
-        c for c in [
-            "district_name",
-            "schools",
-            "total_students",
-            "girls_students",
-            "boys_students",
-            "fte_teaching_staff",
-                    "weighted_avg_icsea",
-            "weighted_indigenous_pct",
-            "weighted_lbote_yes_pct",
-        ] if c in district_df.columns
-    ]
-    display_district_df = district_df[district_cols].copy() if district_cols else district_df.copy()
-    if not display_district_df.empty and "total_students" in display_district_df.columns:
-        display_district_df = display_district_df.sort_values("total_students", ascending=False)
-    _display_df(display_district_df)
+    _render_subsection(
+        f"District Summary - {selected_state}",
+        "Filtered totals update automatically from sidebar selections to match India-style dashboard behavior.",
+    )
+    _display_df(district_summary_df)
 
     st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
 
-    left, right = st.columns([1, 1])
-    with left:
+    col1, col2 = st.columns([1, 1])
+    with col1:
         _render_subsection("Top Districts by Students")
-        if not district_df.empty and {"district_name", "total_students"}.issubset(set(district_df.columns)):
-            top_districts = district_df.sort_values("total_students", ascending=False).head(15)
-            fig = px.bar(top_districts, x="district_name", y="total_students", color_discrete_sequence=[INDIA_UI["students"]])
-            fig = _style_chart(fig, title="Top Districts by Students", x_title="District Name", y_title="Students", height=400)
+        if not district_summary_df.empty and {"district_name", "total_students"}.issubset(set(district_summary_df.columns)):
+            chart_df = district_summary_df.head(15)
+            fig = px.bar(chart_df, x="district_name", y="total_students", color_discrete_sequence=[INDIA_UI["students"]])
+            fig = _style_chart(fig, title="", x_title="District Name", y_title="Students", height=400)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No district student data available.")
-    with right:
+
+    with col2:
         _render_subsection("Top Districts by Schools")
-        if not district_df.empty and {"district_name", "schools"}.issubset(set(district_df.columns)):
-            top_districts = district_df.sort_values("schools", ascending=False).head(15)
-            fig = px.bar(top_districts, x="district_name", y="schools", color_discrete_sequence=[INDIA_UI["schools"]])
-            fig = _style_chart(fig, title="Top Districts by Schools", x_title="District Name", y_title="Schools", height=400)
+        if not district_summary_df.empty and {"district_name", "schools"}.issubset(set(district_summary_df.columns)):
+            chart_df = district_summary_df.head(15)
+            fig = px.bar(chart_df, x="district_name", y="schools", color_discrete_sequence=[INDIA_UI["schools"]])
+            fig = _style_chart(fig, title="", x_title="District Name", y_title="Schools", height=400)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No district school data available.")
 
     st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+
+    mgmt_summary_df = _group_school_metrics(filtered_schools_df, "management_type") if "management_type" in filtered_schools_df.columns else pd.DataFrame()
+    level_summary_df = _group_school_metrics(filtered_schools_df, "school_level") if "school_level" in filtered_schools_df.columns else pd.DataFrame()
+
+    col3, col4 = st.columns([1, 1])
+    with col3:
+        _render_subsection("Management Type Distribution")
+        if not mgmt_summary_df.empty and {"management_type", "total_students"}.issubset(set(mgmt_summary_df.columns)):
+            fig = px.bar(
+                mgmt_summary_df,
+                x="management_type",
+                y="total_students",
+                color="management_type",
+                color_discrete_map={
+                    "Government": INDIA_UI["government"],
+                    "Catholic": INDIA_UI["catholic"],
+                    "Independent": INDIA_UI["independent"],
+                },
+            )
+            fig = _style_chart(fig, title="", x_title="Management Type", y_title="Students", height=380)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No management distribution available.")
+
+    with col4:
+        _render_subsection("School Level Distribution")
+        if not level_summary_df.empty and {"school_level", "schools"}.issubset(set(level_summary_df.columns)):
+            fig = px.bar(level_summary_df, x="school_level", y="schools", color_discrete_sequence=[INDIA_UI["schools"]])
+            fig = _style_chart(fig, title="", x_title="School Level", y_title="Schools", height=380)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No school level distribution available.")
+
+    st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
     _render_subsection("School Directory")
 
-    filter_options = _get_service().get_filter_options() or {}
-    district_options = sorted([d for d in district_df.get("district_name", pd.Series(dtype=str)).dropna().unique().tolist() if d]) if not district_df.empty else []
-    management_types = filter_options.get("management_types", []) or []
-    school_levels = filter_options.get("school_levels", []) or []
-
-    f1, f2, f3, f4 = st.columns([1.2, 1.0, 1.0, 1.2])
-    with f1:
-        selected_district = st.selectbox("District", ["All"] + district_options, index=0, key="au_school_filter_district")
-    with f2:
-        selected_management = st.selectbox("Management Type", ["All"] + management_types, index=0, key="au_school_filter_mgmt")
-    with f3:
-        selected_level = st.selectbox("School Level", ["All"] + school_levels, index=0, key="au_school_filter_level")
-    with f4:
-        search = st.text_input("Search School", value="", key="au_school_search")
-
-    school_filters = {
-        "state_name": selected_state,
-        "district_name": None if selected_district == "All" else selected_district,
-        "management_type": None if selected_management == "All" else selected_management,
-        "school_level": None if selected_level == "All" else selected_level,
-        "delivery_model": None,
-        "search": search or None,
-        "limit": 250,
-        "offset": 0,
-    }
-
-    schools_df = _safe_school_df(**school_filters)
     school_cols = [
         c for c in [
             "school_id",
@@ -746,9 +862,10 @@ def render_au_state_dashboard() -> None:
             "delivery_model",
             "total_students",
             "fte_teaching_staff",
-        ] if c in schools_df.columns
+            "student_teacher_ratio",
+        ] if c in filtered_schools_df.columns
     ]
-    display_schools_df = schools_df[school_cols].copy() if school_cols else schools_df.copy()
+    display_schools_df = filtered_schools_df[school_cols].copy() if school_cols else filtered_schools_df.copy()
     if not display_schools_df.empty and "total_students" in display_schools_df.columns:
         display_schools_df = display_schools_df.sort_values("total_students", ascending=False, na_position="last")
     _display_df(display_schools_df)
@@ -756,43 +873,111 @@ def render_au_state_dashboard() -> None:
 
 def render_au_analytics() -> None:
     _inject_au_css()
-    svc = _get_service()
-    summary = svc.get_national_summary() or {}
-    states_df = _safe_state_df()
+    base_states_df = _safe_state_df()
 
     _render_india_style_top_header("Education Analytics - Australia 2025")
     _render_india_style_section_header("Analytics", icon="📈")
 
+    analytics_filters = _render_analytics_sidebar_filters(base_states_df)
+    selected_state = analytics_filters.get("selected_state")
+
+    if selected_state:
+        states_df = base_states_df.loc[base_states_df["state_name"] == selected_state].copy()
+        schools_df = _safe_school_df(state_name=selected_state, district_name=None, management_type=None, school_level=None, delivery_model=None, search=None, limit=20000, offset=0)
+    else:
+        states_df = base_states_df.copy()
+        schools_df = _safe_school_df(state_name=None, district_name=None, management_type=None, school_level=None, delivery_model=None, search=None, limit=20000, offset=0)
+
+    summary = _analytics_summary_from_states(states_df)
     analytics_kpis = _build_analytics_kpis(summary)
     _render_kpi_cards(analytics_kpis, per_row=3)
 
-    st.markdown("<div style='height: 22px;'></div>", unsafe_allow_html=True)
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Enrollment Analysis",
+        "Teachers & PTR",
+        "Equity Metrics",
+        "Data Tables",
+    ])
 
-    left, right = st.columns([1, 1])
-    with left:
-        _render_subsection("Academic & Demographic Indicators")
-        _render_indicator_chart(states_df)
-    with right:
-        _render_subsection("PTR by State")
-        _render_ptr_chart(states_df)
+    with tab1:
+        left, right = st.columns([1, 1])
+        with left:
+            _render_subsection("State-wise Total Students")
+            _render_top_states_by_students(states_df)
+        with right:
+            _render_subsection("Gender Split")
+            _render_gender_chart(summary)
 
-    st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
-    _render_subsection("State Analytics Grid")
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+        _render_subsection("Management Mix")
+        mgmt_summary_df = _group_school_metrics(schools_df, "management_type") if "management_type" in schools_df.columns else pd.DataFrame()
+        if not mgmt_summary_df.empty and {"management_type", "total_students"}.issubset(set(mgmt_summary_df.columns)):
+            fig = px.bar(
+                mgmt_summary_df,
+                x="management_type",
+                y="total_students",
+                color="management_type",
+                color_discrete_map={
+                    "Government": INDIA_UI["government"],
+                    "Catholic": INDIA_UI["catholic"],
+                    "Independent": INDIA_UI["independent"],
+                },
+            )
+            fig = _style_chart(fig, title="", x_title="Management Type", y_title="Students", height=380)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No management mix data available.")
 
-    analytics_cols = [
-        c for c in [
-            "state_name",
-            "schools",
-            "total_students",
-            "girls_students",
-            "boys_students",
-            "fte_teaching_staff",
-                    "weighted_avg_icsea",
-            "weighted_indigenous_pct",
-            "weighted_lbote_yes_pct",
-        ] if c in states_df.columns
-    ]
-    display_analytics_df = states_df[analytics_cols].copy() if analytics_cols else states_df.copy()
-    if not display_analytics_df.empty and "total_students" in display_analytics_df.columns:
-        display_analytics_df = display_analytics_df.sort_values("total_students", ascending=False)
-    _display_df(display_analytics_df)
+    with tab2:
+        left, right = st.columns([1, 1])
+        with left:
+            _render_subsection("PTR by State")
+            _render_ptr_chart(states_df)
+        with right:
+            _render_subsection("Teachers by State")
+            if not states_df.empty and {"state_name", "fte_teaching_staff"}.issubset(set(states_df.columns)):
+                fig = px.bar(states_df.sort_values("fte_teaching_staff", ascending=False), x="state_name", y="fte_teaching_staff", color_discrete_sequence=[INDIA_UI["teachers"]])
+                fig = _style_chart(fig, title="", x_title="State Name", y_title="Total Teachers", height=420)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No teacher data available.")
+
+    with tab3:
+        left, right = st.columns([1, 1])
+        with left:
+            _render_subsection("Academic & Demographic Indicators")
+            _render_indicator_chart(states_df)
+        with right:
+            _render_subsection("State-wise Avg ICSEA")
+            if not states_df.empty and {"state_name", "weighted_avg_icsea"}.issubset(set(states_df.columns)):
+                fig = px.bar(states_df.sort_values("weighted_avg_icsea", ascending=False), x="state_name", y="weighted_avg_icsea", color_discrete_sequence=[INDIA_UI["icsea"]])
+                fig = _style_chart(fig, title="", x_title="State Name", y_title="Avg ICSEA", height=420)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No ICSEA data available.")
+
+    with tab4:
+        _render_subsection("State Analytics Grid")
+        analytics_cols = [
+            c for c in [
+                "state_name",
+                "schools",
+                "total_students",
+                "girls_students",
+                "boys_students",
+                "fte_teaching_staff",
+                "student_teacher_ratio",
+                "weighted_avg_icsea",
+                "weighted_indigenous_pct",
+                "weighted_lbote_yes_pct",
+            ] if c in states_df.columns
+        ]
+        display_analytics_df = states_df[analytics_cols].copy() if analytics_cols else states_df.copy()
+        if not display_analytics_df.empty and "total_students" in display_analytics_df.columns:
+            display_analytics_df = display_analytics_df.sort_values("total_students", ascending=False)
+        _display_df(display_analytics_df)
+
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+        _render_subsection("Management Summary Table")
+        mgmt_summary_df = _group_school_metrics(schools_df, "management_type") if "management_type" in schools_df.columns else pd.DataFrame()
+        _display_df(mgmt_summary_df)
