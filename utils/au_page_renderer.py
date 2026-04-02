@@ -366,36 +366,81 @@ def _aggregate_state_overview(df: pd.DataFrame) -> Dict[str, Any]:
 def _district_analysis(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty or "district_name" not in df.columns:
         return pd.DataFrame()
-    grp = df.groupby("district_name", dropna=False).agg(
+    out = df.copy()
+    if "school_id" not in out.columns:
+        out["school_id"] = range(1, len(out) + 1)
+    if "total_students" not in out.columns:
+        out["total_students"] = 0
+    if "fte_teaching_staff" not in out.columns:
+        out["fte_teaching_staff"] = 0
+    grp = out.groupby("district_name", dropna=False).agg(
         total_schools=("school_id", pd.Series.nunique),
         total_students=("total_students", "sum"),
         total_teachers=("fte_teaching_staff", "sum"),
     ).reset_index()
-    grp["ptr_ratio"] = grp.apply(lambda r: (r["total_students"] / r["total_teachers"]) if _num(r["total_teachers"]) > 0 else None, axis=1)
+    grp["ptr_ratio"] = grp.apply(
+        lambda r: (r["total_students"] / r["total_teachers"]) if _num(r["total_teachers"]) > 0 else None,
+        axis=1
+    )
     grp["PTR"] = grp["ptr_ratio"].apply(_fmt_ptr)
-    return grp.sort_values("total_schools", ascending=False)
+    return grp.sort_values(["total_students", "total_schools"], ascending=[False, False], na_position="last")
 
 
 def _group_metrics(df: pd.DataFrame, col: str) -> pd.DataFrame:
     if df is None or df.empty or col not in df.columns:
         return pd.DataFrame()
-    grp = df.groupby(col, dropna=False).agg(
+    out = df.copy()
+    if "school_id" not in out.columns:
+        out["school_id"] = range(1, len(out) + 1)
+    if "total_students" not in out.columns:
+        out["total_students"] = 0
+    if "fte_teaching_staff" not in out.columns:
+        out["fte_teaching_staff"] = 0
+    grp = out.groupby(col, dropna=False).agg(
         total_schools=("school_id", pd.Series.nunique),
         total_students=("total_students", "sum"),
         total_teachers=("fte_teaching_staff", "sum"),
     ).reset_index()
-    grp["ptr"] = grp.apply(lambda r: (r["total_students"] / r["total_teachers"]) if _num(r["total_teachers"]) > 0 else None, axis=1)
-    return grp.sort_values("total_schools", ascending=False)
+    grp["ptr"] = grp.apply(
+        lambda r: (r["total_students"] / r["total_teachers"]) if _num(r["total_teachers"]) > 0 else None,
+        axis=1
+    )
+    grp["PTR"] = grp["ptr"].apply(_fmt_ptr)
+    return grp.sort_values(["total_students", "total_schools"], ascending=[False, False], na_position="last")
 
 
-def _analytics_aggregate(df: pd.DataFrame) -> Dict[str, Any]:
-    if df is None or df.empty:
-        return {"total_schools": 0, "total_students": 0, "total_teachers": 0, "ptr": None}
-    total_schools = df["school_id"].nunique() if "school_id" in df.columns else len(df)
-    total_students = _num(df["total_students"].sum()) if "total_students" in df.columns else 0
-    total_teachers = _num(df["fte_teaching_staff"].sum()) if "fte_teaching_staff" in df.columns else 0
+def _analytics_aggregate(df: pd.DataFrame, states_df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+    total_schools = 0
+    total_students = 0
+    total_teachers = 0
+
+    if states_df is not None and not states_df.empty:
+        if "schools" in states_df.columns:
+            total_schools = _num(states_df["schools"].fillna(0).sum())
+        elif "school_id" in states_df.columns:
+            total_schools = states_df["school_id"].nunique()
+
+        if "total_students" in states_df.columns:
+            total_students = _num(states_df["total_students"].fillna(0).sum())
+
+        if "fte_teaching_staff" in states_df.columns:
+            total_teachers = _num(states_df["fte_teaching_staff"].fillna(0).sum())
+
+    if (total_schools == 0 or total_students == 0) and df is not None and not df.empty:
+        if total_schools == 0:
+            total_schools = df["school_id"].nunique() if "school_id" in df.columns else len(df)
+        if total_students == 0 and "total_students" in df.columns:
+            total_students = _num(df["total_students"].fillna(0).sum())
+        if total_teachers == 0 and "fte_teaching_staff" in df.columns:
+            total_teachers = _num(df["fte_teaching_staff"].fillna(0).sum())
+
     ptr = round(total_students / total_teachers) if total_teachers > 0 else None
-    return {"total_schools": total_schools, "total_students": total_students, "total_teachers": total_teachers, "ptr": ptr}
+    return {
+        "total_schools": total_schools,
+        "total_students": total_students,
+        "total_teachers": total_teachers,
+        "ptr": ptr
+    }
 
 
 def _comparison_df_state(states_df: pd.DataFrame, state1: str, state2: str) -> pd.DataFrame:
@@ -493,28 +538,22 @@ def _fetch_grade_enrollment(filters: Dict[str, Any]) -> pd.DataFrame:
 
 
 def _render_metric_cards_overview(agg_data: Dict[str, Any]) -> None:
-    st.markdown("#### 📊 Key Performance Indicators")
-    kpi_cols = st.columns(4)
-    with kpi_cols[0]:
-        st.metric("Total Schools", _fmt_int(agg_data.get("total_schools")))
-    with kpi_cols[1]:
-        st.metric("Total Students", _fmt_int(agg_data.get("total_students")))
-    with kpi_cols[2]:
-        st.metric("Total Teachers", _fmt_int(agg_data.get("total_teachers")))
-    with kpi_cols[3]:
-        ptr_value = _fmt_ptr(agg_data.get("ptr" if "ptr" in agg_data else "ptr_ratio")) if agg_data.get("ptr" if "ptr" in agg_data else "ptr_ratio") else "N/A"
-        st.metric("PTR", ptr_value)
-    col1, col2 = st.columns(2)
-    with col1:
-        schools = _num(agg_data.get("total_schools"))
-        students = _num(agg_data.get("total_students"))
-        sps = round(students / schools, 2) if schools > 0 else None
-        st.metric("Students per School", f"{sps}" if sps is not None else "N/A")
-    with col2:
-        schools = _num(agg_data.get("total_schools"))
-        teachers = _num(agg_data.get("total_teachers"))
-        tps = round(teachers / schools, 2) if schools > 0 else None
-        st.metric("Teachers per School", f"{tps}" if tps is not None else "N/A")
+    schools = _num(agg_data.get("total_schools"))
+    students = _num(agg_data.get("total_students"))
+    teachers = _num(agg_data.get("total_teachers"))
+    ptr = agg_data.get("ptr")
+    sps = round(students / schools) if schools > 0 else None
+    tps = round(teachers / schools, 2) if schools > 0 and teachers > 0 else None
+
+    cards = [
+        {"label": "TOTAL SCHOOLS", "value": _fmt_int(schools)},
+        {"label": "TOTAL STUDENTS", "value": _fmt_int(students)},
+        {"label": "TOTAL TEACHERS", "value": _fmt_int(teachers)},
+        {"label": "PTR", "value": _fmt_ptr(ptr) if ptr is not None else "N/A"},
+        {"label": "STUDENTS/SCHOOL", "value": _fmt_int(sps) if sps is not None else "N/A"},
+        {"label": "TEACHERS/SCHOOL", "value": _fmt_float(tps, 2) if tps is not None else "N/A"},
+    ]
+    _render_kpi_cards(cards, per_row=3)
 
 
 # -----------------------------
@@ -661,7 +700,7 @@ def render_au_analytics() -> None:
     else:
         states_df = base_states_df.copy()
 
-    agg_data = _analytics_aggregate(schools_df if not schools_df.empty else pd.DataFrame())
+    agg_data = _analytics_aggregate(schools_df if not schools_df.empty else pd.DataFrame(), states_df)
     _render_metric_cards_overview(agg_data)
 
     tabs = st.tabs(["Overview", "District Analysis", "Comparative Analysis", "Custom Reports"])
