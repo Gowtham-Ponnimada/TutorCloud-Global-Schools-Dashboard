@@ -151,37 +151,42 @@ def _inject_au_css() -> None:
         f"""
         <style>
         .au-kpi-card {{
-            background: {THEME["card_bg"]};
-            border: 1px solid {THEME["border"]};
-            border-radius: 16px;
-            padding: 16px 18px 14px 18px;
-            box-shadow: 0 6px 18px rgba(17, 24, 39, 0.06);
-            min-height: 108px;
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 14px;
+            padding: 14px 16px 12px 16px;
+            box-shadow: 0 8px 20px rgba(17, 24, 39, 0.06);
+            min-height: 104px;
             display: flex;
             flex-direction: column;
             justify-content: center;
-            gap: 2px;
+            gap: 1px;
         }}
         .au-kpi-label {{
-            color: {THEME["muted"]};
-            font-size: 0.82rem;
+            color: #6B7280;
+            font-size: 0.76rem;
             font-weight: 700;
-            line-height: 1.2;
+            line-height: 1.15;
             margin-bottom: 6px;
-            text-transform: none;
-            letter-spacing: 0.15px;
+            letter-spacing: 0.1px;
         }}
         .au-kpi-value {{
-            color: {THEME["text"]};
-            font-size: 1.9rem;
+            color: #111827;
+            font-size: 2.0rem;
             font-weight: 800;
-            line-height: 1.08;
-            margin-bottom: 3px;
+            line-height: 1.0;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.02em;
         }}
         .au-kpi-sub {{
-            color: {THEME["muted"]};
-            font-size: 0.76rem;
-            line-height: 1.2;
+            color: #6B7280;
+            font-size: 0.74rem;
+            line-height: 1.15;
+            white-space: nowrap;
         }}
         .au-section-title {{
             color: {THEME["text"]};
@@ -218,7 +223,6 @@ def _inject_au_css() -> None:
         """,
         unsafe_allow_html=True,
     )
-
 
 def _prettify_label(label: str) -> str:
     if label is None:
@@ -299,19 +303,72 @@ def _fmt_pct(v: Any, digits: int = 2) -> str:
         return str(v)
 
 
+
+
+def _fmt_compact(v: Any, digits: int = 2) -> str:
+    if _is_missing(v):
+        return "N/A"
+    try:
+        n = float(v)
+        abs_n = abs(n)
+        if abs_n >= 1_000_000_000:
+            return f"{n / 1_000_000_000:.{digits}f}B"
+        if abs_n >= 1_000_000:
+            return f"{n / 1_000_000:.{digits}f}M"
+        if abs_n >= 1_000:
+            return f"{n / 1_000:.{digits}f}K"
+        if float(n).is_integer():
+            return f"{int(n):,}"
+        return f"{n:.{digits}f}"
+    except Exception:
+        return str(v)
+
+
+def _kpi_card_label(label: str) -> str:
+    mapping = {
+        "Total Schools": "Total Schools",
+        "Total Students": "Total Students",
+        "Girls": "Girls",
+        "Boys": "Boys",
+        "FTE Teaching Staff": "Teaching Staff",
+        "Student-Teacher Ratio": "PTR",
+        "Weighted Avg ICSEA": "Avg ICSEA",
+        "Weighted Indigenous %": "Indigenous %",
+        "Weighted LBOTE %": "LBOTE %",
+    }
+    return mapping.get(label, label)
+
+
+def _kpi_card_subtitle(label: str) -> str:
+    mapping = {
+        "Teaching Staff": "FTE · Australia · 2025",
+        "PTR": "Student-Teacher Ratio",
+        "Avg ICSEA": "Australia · 2025",
+        "Indigenous %": "Australia · 2025",
+        "LBOTE %": "Australia · 2025",
+    }
+    return mapping.get(label, "Australia · 2025")
+
 def _fmt_metric(label: str, value: Any) -> str:
-    if label in {"Total Schools", "Total Students", "Girls", "Boys", "Schools"}:
+    """
+    KPI cards use compact notation to avoid wrapping and better match India-card visual density.
+    Tables remain fully formatted elsewhere.
+    """
+    if label == "Total Schools":
         return _fmt_int(value)
+    if label in {"Total Students", "Girls", "Boys"}:
+        return _fmt_compact(value, 2)
     if label == "FTE Teaching Staff":
-        return _fmt_float(value, 1)
-    if label in {"Student-Teacher Ratio", "Weighted Avg ICSEA"}:
+        return _fmt_compact(value, 1)
+    if label == "Student-Teacher Ratio":
+        return _fmt_float(value, 2)
+    if label == "Weighted Avg ICSEA":
         return _fmt_float(value, 2)
     if label in {"Weighted Indigenous %", "Weighted LBOTE %"}:
         return _fmt_pct(value, 2)
     if _is_missing(value):
         return "N/A"
     return str(value)
-
 
 def _coerce_display_value(v: Any) -> Any:
     if _is_missing(v):
@@ -450,25 +507,30 @@ def _metric_color(label: str) -> str:
     return INDIA_COLOR_TOKENS.get(label, THEME["primary"])
 
 
-def _render_kpi_cards(kpis: List[tuple]) -> None:
+def _render_kpi_cards(kpis: List[tuple], per_row: int = 3) -> None:
     if not kpis:
         return
 
-    cols = st.columns(len(kpis))
-    for col, (label, value) in zip(cols, kpis):
-        color = _metric_color(label)
-        formatted = _fmt_metric(label, value)
-        col.markdown(
-            f"""
-            <div class="au-kpi-card" style="border-top: 4px solid {color};">
-                <div class="au-kpi-label">{label}</div>
-                <div class="au-kpi-value">{formatted}</div>
-                <div class="au-kpi-sub">Australia · 2025</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    for i in range(0, len(kpis), per_row):
+        row = kpis[i:i + per_row]
+        cols = st.columns(len(row))
+        for col, (label, value) in zip(cols, row):
+            color = _metric_color(label)
+            formatted = _fmt_metric(label, value)
+            card_label = _kpi_card_label(label)
+            subtitle = _kpi_card_subtitle(card_label)
 
+            col.markdown(
+                f"""
+                <div class="au-kpi-card" style="border-top: 4px solid {color};">
+                    <div class="au-kpi-label">{card_label}</div>
+                    <div class="au-kpi-value">{formatted}</div>
+                    <div class="au-kpi-sub">{subtitle}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
 def _build_primary_kpis(summary: Dict[str, Any]) -> List[tuple]:
     return [
