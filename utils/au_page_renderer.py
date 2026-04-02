@@ -79,7 +79,6 @@ INT_LIKE_COLUMNS = {
 
 FLOAT_1_COLUMNS = {"fte_teaching_staff"}
 FLOAT_2_COLUMNS = {
-    "student_teacher_ratio",
     "weighted_avg_icsea",
     "weighted_indigenous_pct",
     "weighted_lbote_yes_pct",
@@ -170,10 +169,9 @@ def _fmt_ptr(v: Any) -> str:
     if _is_missing(v):
         return "N/A"
     try:
-        return f"{float(v):.2f}:1"
+        return f"{int(round(float(v)))}:1"
     except Exception:
         return str(v)
-
 
 def _fmt_metric_value(metric_key: str, value: Any) -> str:
     if metric_key in {"total_states", "schools", "total_schools", "students_per_school"}:
@@ -224,7 +222,9 @@ def _format_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
 
     out = df.copy()
     for col in out.columns:
-        if col in INT_LIKE_COLUMNS:
+        if col == "student_teacher_ratio":
+            out[col] = out[col].apply(_fmt_ptr)
+        elif col in INT_LIKE_COLUMNS:
             out[col] = out[col].apply(_fmt_int)
         elif col in FLOAT_1_COLUMNS:
             out[col] = out[col].apply(lambda x: _fmt_float(x, 1))
@@ -528,11 +528,13 @@ def _render_ptr_chart(states_df: pd.DataFrame) -> None:
     df = states_df.sort_values("student_teacher_ratio", ascending=False)
     fig = px.line(df, x="state_name", y="student_teacher_ratio", markers=True)
     fig = _style_chart(fig, title="PTR by State", x_title="State Name", y_title="PTR", height=420)
+    fig.update_yaxes(ticksuffix=":1")
     for tr in fig.data:
         try:
             tr.name = "PTR"
             tr.line.color = INDIA_UI["ptr"]
             tr.marker.color = INDIA_UI["ptr"]
+            tr.hovertemplate = "State Name=%{x}<br>PTR=%{y:.0f}:1<extra></extra>"
         except Exception:
             pass
     st.plotly_chart(fig, use_container_width=True)
@@ -670,8 +672,7 @@ def render_au_state_dashboard() -> None:
             "girls_students",
             "boys_students",
             "fte_teaching_staff",
-            "student_teacher_ratio",
-            "weighted_avg_icsea",
+                    "weighted_avg_icsea",
             "weighted_indigenous_pct",
             "weighted_lbote_yes_pct",
         ] if c in district_df.columns
@@ -786,8 +787,7 @@ def render_au_analytics() -> None:
             "girls_students",
             "boys_students",
             "fte_teaching_staff",
-            "student_teacher_ratio",
-            "weighted_avg_icsea",
+                    "weighted_avg_icsea",
             "weighted_indigenous_pct",
             "weighted_lbote_yes_pct",
         ] if c in states_df.columns
