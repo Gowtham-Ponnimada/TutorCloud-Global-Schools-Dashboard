@@ -5,6 +5,7 @@
 # based on st.session_state["selected_region"] == "UAE"
 
 import io
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -129,8 +130,11 @@ UAE_CSS = """
 
 # ─── DB connection params ─────────────────────────────────────────────────────
 _DB_PARAMS = dict(
-    host="localhost", dbname="tutorcloud_db",
-    user="tutorcloud_admin", password="TutorCloud2024!Secure"
+    host=os.getenv("DB_HOST", "localhost"),
+    dbname=os.getenv("DB_NAME", os.getenv("DB_DATABASE", "tutorcloud_db")),
+    user=os.getenv("DB_USER", "tutorcloud_admin"),
+    password=os.getenv("DB_PASSWORD", ""),
+    port=int(os.getenv("DB_PORT", "5432")),
 )
 
 
@@ -335,13 +339,13 @@ def _export_buttons(df: pd.DataFrame, prefix: str):
         return
     c1, c2, _ = st.columns([1, 1, 4])
     csv = df.to_csv(index=False).encode()
-    c1.download_button("⬇ Export CSV", csv,
+    c1.download_button("📥 Download CSV", csv,
                        file_name=f"uae_{prefix}.csv",
                        mime="text/csv", key=f"csv_{prefix}")
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, index=False, sheet_name=prefix[:31])
-    c2.download_button("⬇ Export Excel", buf.getvalue(),
+    c2.download_button("📊 Download Excel", buf.getvalue(),
                        file_name=f"uae_{prefix}.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                        key=f"xl_{prefix}")
@@ -811,187 +815,225 @@ Interactive analytics with geographic maps and custom reports.
 # 2. STATE DASHBOARD (UAE = Emirates)  ── mirrors India State Dashboard
 # ══════════════════════════════════════════════════════════════════════════════
 
-def render_uae_state_dashboard():
-    if _inject_css:
-        _inject_css()
-    st.markdown(UAE_CSS, unsafe_allow_html=True)
+def _uae_scalar_value(sql: str, params=None, default=0):
+    df = _q(sql, params)
+    if df is None or df.empty:
+        return default
+    try:
+        value = df.iloc[0, 0]
+        if pd.isna(value):
+            return default
+        return value
+    except Exception:
+        return default
 
-    st.markdown('<div class="main-header">📊 UAE State Dashboard</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sub-header">Comprehensive Emirate-Level Analysis — Academic Year 2024–2025</div>',
-        unsafe_allow_html=True
-    )
 
-    filters = _build_sidebar_filters()
-
-    # ── KPI overview row (mirrors India State Overview) ────────────────────────
-    enr_cols    = _tbl_cols("uae_fact_enrollment")
-    sch_cols    = _tbl_cols("uae_fact_schools")
-    tch_cols    = _tbl_cols("uae_fact_teachers_emirate")
+def _uae_overview_metrics(filters: dict) -> dict:
+    enr_cols = _tbl_cols("uae_fact_enrollment")
+    sch_cols = _tbl_cols("uae_fact_schools")
+    tch_cols = _tbl_cols("uae_fact_teachers_emirate")
 
     emirate_col = _pick_col(enr_cols, "region_en", "emirate", "emirate_en", "region")
+    gender_col = _pick_col(enr_cols, "gender", "student_gender")
     enr_cnt_col = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
     sch_cnt_col = _pick_col(sch_cols, "school_count", "num_schools", "count")
+    sch_em_col = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
     tch_cnt_col = _pick_col(tch_cols, "teacher_count", "num_teachers", "count", "teachers")
-    gender_col  = _pick_col(enr_cols, "gender", "student_gender")
 
     where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
     where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
     where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
 
-    # Compute KPIs
-    total_enr = 0
-    male_enr  = 0
-    female_enr = 0
-    if enr_cnt_col:
-        df = _q(
-            f"SELECT COALESCE(SUM({enr_cnt_col}),0) AS total "
-            f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr}",
-            [UAE_YEAR] + params_enr
+    total_students = int(_uae_scalar_value(
+        f"SELECT COALESCE(SUM({enr_cnt_col}),0) FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr}",
+        [UAE_YEAR] + params_enr,
+        0,
+    )) if enr_cnt_col else 0
+
+    total_schools = int(_uae_scalar_value(
+        f"SELECT COALESCE(SUM({sch_cnt_col}),0) FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch}",
+        [UAE_YEAR] + params_sch,
+        0,
+    )) if sch_cnt_col else 0
+
+    total_teachers = int(_uae_scalar_value(
+        f"SELECT COALESCE(SUM({tch_cnt_col}),0) FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch}",
+        [UAE_YEAR] + params_tch,
+        0,
+    )) if tch_cnt_col else 0
+
+    if gender_col and enr_cnt_col:
+        df_gender = _q(
+            f"SELECT {gender_col} AS gender, SUM({enr_cnt_col}) AS students FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr} GROUP BY {gender_col}",
+            [UAE_YEAR] + params_enr,
         )
-        total_enr = int(df.iloc[0, 0]) if not df.empty else 0
+    else:
+        df_gender = pd.DataFrame()
 
-        if gender_col:
-            df_g = _q(
-                f"SELECT {gender_col} AS g, SUM({enr_cnt_col}) AS cnt "
-                f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr} "
-                f"GROUP BY {gender_col}", [UAE_YEAR] + params_enr
-            )
-            if not df_g.empty:
-                df_g.columns = ["g", "cnt"]
-                male_enr   = int(df_g[df_g["g"].str.lower().str.startswith("m", na=False)]["cnt"].sum())
-                female_enr = int(df_g[df_g["g"].str.lower().str.startswith("f", na=False)]["cnt"].sum())
+    male_students = int(df_gender[df_gender['gender'].astype(str).str.lower().str.startswith('m', na=False)]['students'].sum()) if not df_gender.empty else 0
+    female_students = int(df_gender[df_gender['gender'].astype(str).str.lower().str.startswith('f', na=False)]['students'].sum()) if not df_gender.empty else 0
 
-    total_sch = 0
-    if sch_cnt_col:
-        df = _q(
-            f"SELECT COALESCE(SUM({sch_cnt_col}),0) FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch}",
-            [UAE_YEAR] + params_sch
-        )
-        total_sch = int(df.iloc[0, 0]) if not df.empty else 0
+    total_districts = int(_uae_scalar_value(
+        f"SELECT COUNT(DISTINCT {sch_em_col}) FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch}",
+        [UAE_YEAR] + params_sch,
+        0,
+    )) if sch_em_col else 0
 
-    total_tch = 0
-    if tch_cnt_col:
-        df = _q(
-            f"SELECT COALESCE(SUM({tch_cnt_col}),0) FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch}",
-            [UAE_YEAR] + params_tch
-        )
-        total_tch = int(df.iloc[0, 0]) if not df.empty else 0
+    return {
+        'total_schools': total_schools,
+        'schools_with_enrollment': total_schools if total_students > 0 else 0,
+        'total_districts': total_districts,
+        'total_students': total_students,
+        'male_students': male_students,
+        'female_students': female_students,
+        'total_teachers': total_teachers,
+        'state_ptr': _fmt_ptr(total_students, total_teachers),
+    }
 
-    ptr_str = _fmt_ptr(total_enr, total_tch)
 
-    # Display KPI row  [MV_KPI_BLOCK_v3b]
-    _curr_active = (
-        "curriculum" in filters
-        and filters["curriculum"].get("val") not in ("All", "", None)
+def _uae_emirate_analysis(filters: dict) -> pd.DataFrame:
+    enr_cols = _tbl_cols("uae_fact_enrollment")
+    sch_cols = _tbl_cols("uae_fact_schools")
+    tch_cols = _tbl_cols("uae_fact_teachers_emirate")
+
+    emirate_col = _pick_col(enr_cols, "region_en", "emirate", "emirate_en", "region")
+    enr_cnt_col = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
+    sch_em_col = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
+    sch_cnt_col = _pick_col(sch_cols, "school_count", "num_schools", "count")
+    tch_em_col = _pick_col(tch_cols, "region_en", "emirate", "emirate_en", "region")
+    tch_cnt_col = _pick_col(tch_cols, "teacher_count", "num_teachers", "count", "teachers")
+
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
+    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
+    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
+
+    df_enr = _q(
+        f"SELECT {emirate_col} AS emirate, SUM({enr_cnt_col}) AS total_students FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr} GROUP BY {emirate_col}",
+        [UAE_YEAR] + params_enr,
+    ) if emirate_col and enr_cnt_col else pd.DataFrame(columns=['emirate', 'total_students'])
+
+    df_sch = _q(
+        f"SELECT {sch_em_col} AS emirate, SUM({sch_cnt_col}) AS total_schools FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch} GROUP BY {sch_em_col}",
+        [UAE_YEAR] + params_sch,
+    ) if sch_em_col and sch_cnt_col else pd.DataFrame(columns=['emirate', 'total_schools'])
+
+    df_tch = _q(
+        f"SELECT {tch_em_col} AS emirate, SUM({tch_cnt_col}) AS total_teachers FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch} GROUP BY {tch_em_col}",
+        [UAE_YEAR] + params_tch,
+    ) if tch_em_col and tch_cnt_col else pd.DataFrame(columns=['emirate', 'total_teachers'])
+
+    frames = [df for df in [df_enr, df_sch, df_tch] if not df.empty]
+    if not frames:
+        return pd.DataFrame()
+    out = frames[0]
+    for frame in frames[1:]:
+        out = out.merge(frame, on='emirate', how='outer')
+    out = out.fillna(0)
+    out['ptr_ratio'] = out.apply(lambda r: (float(r['total_students']) / float(r['total_teachers'])) if float(r.get('total_teachers', 0) or 0) > 0 else None, axis=1)
+    out['PTR'] = out['ptr_ratio'].apply(lambda x: f"{int(round(float(x)))}:1" if x not in (None, 0) and pd.notna(x) else 'N/A')
+    return out.sort_values(['total_students', 'total_schools'], ascending=[False, False])
+
+
+def _uae_education_type_breakdown(filters: dict) -> pd.DataFrame:
+    enr_cols = _tbl_cols("uae_fact_enrollment")
+    edu_col = _pick_col(enr_cols, "education_type", "school_type", "edu_type", "type")
+    gender_col = _pick_col(enr_cols, "gender", "student_gender")
+    enr_cnt_col = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
+    if not edu_col or not enr_cnt_col:
+        return pd.DataFrame()
+    select_gender = f", {gender_col} AS gender" if gender_col else ""
+    group_gender = f", {gender_col}" if gender_col else ""
+    df = _q(
+        f"SELECT {edu_col} AS education_type{select_gender}, SUM({enr_cnt_col}) AS students FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr} GROUP BY {edu_col}{group_gender} ORDER BY students DESC",
+        [UAE_YEAR] + params_enr,
     )
+    return df
 
-    if _curr_active:
-        _curr_val  = filters["curriculum"]["val"]
-        _emir_raw  = filters.get("emirate", {}).get("val") if "emirate" in filters else None
-        _edtyp_val = (
-            filters.get("education_type", {}).get("val")
-            if "education_type" in filters
-            else (filters.get("edu_type", {}).get("val") if "edu_type" in filters else None)
-        )
-        _emir_val  = _emir_raw if _emir_raw and _emir_raw not in ("All", "") else None
-        _scope_lbl = _emir_val.title() if _emir_val else "UAE"
 
-        mv = _mv_curriculum_kpi(UAE_YEAR, _curr_val, _emir_val, _edtyp_val)
+def _uae_school_directory_summary(filters: dict) -> pd.DataFrame:
+    sch_cols = _tbl_cols("uae_fact_schools")
+    emirate_col = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
+    curr_col = _pick_col(sch_cols, "curriculum_en", "curriculum", "curriculum_type")
+    level_col = _pick_col(sch_cols, "school_level", "level", "education_level", "cycle")
+    sch_cnt_col = _pick_col(sch_cols, "school_count", "num_schools", "count")
+    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
+    if not sch_cnt_col:
+        return pd.DataFrame()
+    emirate_sel = f"{emirate_col} AS emirate," if emirate_col else ""
+    curriculum_sel = f"{curr_col} AS curriculum," if curr_col else ""
+    level_sel = f"{level_col} AS school_level," if level_col else ""
+    group_cols = [c for c in [emirate_col, curr_col, level_col] if c]
+    if not group_cols:
+        return pd.DataFrame()
+    df = _q(
+        f"SELECT {emirate_sel}{curriculum_sel}{level_sel} SUM({sch_cnt_col}) AS total_schools FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch} GROUP BY {', '.join(group_cols)} ORDER BY total_schools DESC",
+        [UAE_YEAR] + params_sch,
+    )
+    return df
 
-        if mv and mv["row_count"] > 0:
-            _mv_schools  = mv["school_count"]
-            _mv_enr_ok   = mv["has_enrollment_data"]
-            _mv_tch_ok   = mv["has_teacher_data"]
 
-            _mv_students = int(mv["student_count"]) if (_mv_enr_ok and mv["student_count"] is not None) else None
-            _mv_male     = int(mv["male_students"]  or 0) if _mv_students is not None else None
-            _mv_female   = int(mv["female_students"] or 0) if _mv_students is not None else None
-            _mv_teachers = int(mv["teacher_count"]) if (_mv_tch_ok and mv["teacher_count"] is not None) else None
-            _mv_ptr      = _fmt_ptr(_mv_students or 0, _mv_teachers or 0) if (_mv_students and _mv_teachers) else "N/A"
+def render_uae_state_dashboard():
+    if _inject_css:
+        _inject_css()
+    st.markdown(UAE_CSS, unsafe_allow_html=True)
+    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
 
-            st.markdown(
-                f'<div class="section-header">📊 {_scope_lbl} · {_curr_val} · 2024-25</div>',
-                unsafe_allow_html=True
-            )
-            k1, k2, k3, k4 = st.columns(4)
-            with k1: st.metric("🏫 Total Schools",
-                                _fmt(_mv_schools),
-                                help=f"Schools offering {_curr_val} in {_scope_lbl}")
-            with k2: st.metric(f"🎓 Students · {_scope_lbl}",
-                                _fmt(_mv_students) if _mv_students is not None else "N/A",
-                                help="Proportional estimate based on school-share within education type")
-            with k3: st.metric(f"👨‍🏫 Teachers · {_scope_lbl}",
-                                _fmt(_mv_teachers) if _mv_teachers is not None else "N/A",
-                                help="Proportional estimate based on school-share within education type")
-            with k4: st.metric("📊 PTR", _mv_ptr)
+    filters = _build_sidebar_filters()
+    overview = _uae_overview_metrics(filters)
 
-            if _mv_students is not None:
-                k5, k6 = st.columns(2)
-                with k5: st.metric("👦 Male Students",   _fmt(_mv_male))
-                with k6: st.metric("👧 Female Students", _fmt(_mv_female))
+    k1, k2, k3, k4 = st.columns(4)
+    k5, k6, k7, k8 = st.columns(4)
+    k1.metric("TOTAL SCHOOLS", _fmt(overview['total_schools']))
+    k2.metric("SCHOOLS WITH ENROLLMENT", _fmt(overview['schools_with_enrollment']))
+    k3.metric("TOTAL DISTRICTS", _fmt(overview['total_districts']))
+    k4.metric("TOTAL STUDENTS", _fmt(overview['total_students']))
+    k5.metric("MALE STUDENTS", _fmt(overview['male_students']))
+    k6.metric("FEMALE STUDENTS", _fmt(overview['female_students']))
+    k7.metric("TOTAL TEACHERS", _fmt(overview['total_teachers']))
+    k8.metric("PTR (STATE)", overview['state_ptr'])
 
-            if _mv_enr_ok:
-                st.info(
-                    f"📌 **Curriculum filter: {_curr_val}  |  Scope: {_scope_lbl}**\n\n"
-                    f"School count is **exact**. Student & teacher counts are **proportional estimates** "
-                    f"(curriculum school-share × emirate/education-type total). "
-                    f"Aggregate across all curricula equals the Home page total.",
-                    icon="ℹ️"
-                )
-            else:
-                st.warning(
-                    f"⚠️ **{_curr_val}** is a private/specialist curriculum. "
-                    f"Student enrollment data is not available at curriculum level. "
-                    f"Only school count ({_fmt(_mv_schools)}) is accurate.",
-                    icon="⚠️"
-                )
+    st.markdown("### 📍 District-Level PTR Analysis")
+    district_df = _uae_emirate_analysis(filters)
+    if not district_df.empty:
+        display_df = district_df.rename(columns={'emirate': 'District', 'total_schools': 'Total Schools', 'total_students': 'Total Students', 'total_teachers': 'Total Teachers', 'PTR': 'PTR'})
+        st.dataframe(display_df[['District', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']], use_container_width=True, hide_index=True)
+        fig = px.bar(district_df.head(20), x='emirate', y='ptr_ratio', color='ptr_ratio', color_continuous_scale='RdYlGn_r', custom_data=['PTR'])
+        fig.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
+        fig.update_layout(title='District-Level PTR Analysis (Top 20)', xaxis_title='District', yaxis_title='PTR', xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120), plot_bgcolor='white', paper_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        _export_buttons(display_df, 'state_dashboard_district_analysis')
+    else:
+        st.info('No district-level data available for the selected filters.')
+
+    st.markdown("### 📚 Education-Type Enrollment Breakdown")
+    edu_df = _uae_education_type_breakdown(filters)
+    if not edu_df.empty:
+        if 'gender' in edu_df.columns:
+            fig = px.bar(edu_df, x='education_type', y='students', color='gender', barmode='group', color_discrete_sequence=['#3498db', '#e74c3c'])
         else:
-            st.info("ℹ️ Curriculum KPI view not yet available — showing emirate-wide totals.", icon="ℹ️")
-            mv = None  # fall through
+            fig = px.bar(edu_df, x='education_type', y='students', color='students', color_continuous_scale='Viridis')
+        fig.update_layout(title='Education-Type Enrollment', xaxis_title='Education Type', yaxis_title='Students', xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120), plot_bgcolor='white', paper_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.dataframe(edu_df.rename(columns={'education_type': 'Education Type', 'gender': 'Gender', 'students': 'Students'}), use_container_width=True, hide_index=True)
+        _export_buttons(edu_df, 'state_dashboard_education_type')
+    else:
+        st.info('No education-type enrollment data is available for current filters.')
 
-    if not _curr_active or not (mv and mv["row_count"] > 0):
-        st.markdown('<div class="section-header">📊 Overview — UAE 2024-25</div>', unsafe_allow_html=True)
-        k1, k2, k3, k4 = st.columns(4)
-        with k1: st.metric("🏫 Total Schools",   _fmt(total_sch))
-        with k2: st.metric("🎓 Total Students",  _fmt(total_enr))
-        with k3: st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
-        with k4: st.metric("📊 National PTR",    ptr_str)
-        k5, k6 = st.columns(2)
-        with k5: st.metric("👦 Male Students",   _fmt(male_enr))
-        with k6: st.metric("👧 Female Students", _fmt(female_enr))
+    st.markdown("### 🏫 School Directory")
+    directory_df = _uae_school_directory_summary(filters)
+    if not directory_df.empty:
+        st.dataframe(directory_df.rename(columns={'emirate': 'District', 'curriculum': 'Curriculum', 'school_level': 'School Level', 'total_schools': 'Total Schools'}), use_container_width=True, hide_index=True)
+        _export_buttons(directory_df, 'state_dashboard_school_directory')
+    else:
+        st.info('No school directory summary is available for the selected filters.')
 
-    st.markdown("---")
-
-    # ── 5 Tabs (matching India's tab structure) ────────────────────────────────
-    tabs = st.tabs([
-        "📊 Overview",
-        "🏫 Schools",
-        "👨‍🏫 Teachers",
-        "📈 Performance",
-        "🌍 Demographics",
-    ])
-
-    with tabs[0]:
-        _uae_tab_overview(filters)
-    with tabs[1]:
-        _uae_tab_schools(filters)
-    with tabs[2]:
-        _uae_tab_teachers(filters)
-    with tabs[3]:
-        _uae_tab_performance(filters)
-    with tabs[4]:
-        _uae_tab_demographics(filters)
-
-    # Footer
-    st.markdown("---")
+    st.markdown('---')
     st.markdown(
-        "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
-        "<strong>TutorCloud Global Dashboard</strong><br>"
-        "© 2026 TutorCloud. All rights reserved.</div>",
-        unsafe_allow_html=True
+        "<div style='text-align:center;color:#757575;font-size:.85rem;'><strong>TutorCloud Global Dashboard</strong><br>© 2026 TutorCloud. All rights reserved.</div>",
+        unsafe_allow_html=True,
     )
-
 
 # ── Tab 1: Overview ────────────────────────────────────────────────────────────
 
@@ -1506,25 +1548,11 @@ def render_uae_analytics():
     if _inject_css:
         _inject_css()
     st.markdown(UAE_CSS, unsafe_allow_html=True)
+    st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="main-header">📈 UAE Analytics</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sub-header">Interactive Analytics — Academic Year 2024–2025</div>',
-        unsafe_allow_html=True
-    )
-
-    # UAE_FILTER_FRAMEWORK_FIX_v1:
-    # Use the same UAE sidebar filters here as State Dashboard so
-    # analytics respects emirate / education type / curriculum selections.
     filters = _build_sidebar_filters()
-
-    tabs = st.tabs([
-        "🗺️ Geographic Maps",
-        "🎯 Performance Metrics",
-        "🔍 Comparative Analysis",
-        "📝 Custom Reports",
-    ])
-
+    tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
     with tabs[0]:
         _uae_analytics_geo(filters)
     with tabs[1]:
@@ -1534,15 +1562,11 @@ def render_uae_analytics():
     with tabs[3]:
         _uae_analytics_custom(filters)
 
-    # Footer
-    st.markdown("---")
+    st.markdown('---')
     st.markdown(
-        "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
-        "<strong>TutorCloud Global Dashboard</strong><br>"
-        "© 2026 TutorCloud. All rights reserved.</div>",
-        unsafe_allow_html=True
+        "<div style='text-align:center;color:#757575;font-size:.85rem;'><strong>TutorCloud Global Dashboard</strong><br>© 2026 TutorCloud. All rights reserved.</div>",
+        unsafe_allow_html=True,
     )
-
 
 # ── Analytics Tab 1: Geographic Analysis (mirrors India "Geographic Maps") ─────
 
@@ -2062,3 +2086,145 @@ def _uae_analytics_custom(filters):
 
 # UAE_FILTER_FRAMEWORK_FIX_v1
 # UAE_GENDER_SCOPE_FIX_v2
+
+# === INDIA_PARITY_OVERRIDE_UAE ===
+def _uae_exact_multiselect(label: str, opts: list, key: str, help_text: str = '', apply_to: list | None = None, col: str | None = None):
+    values = [str(x) for x in opts if str(x).strip()]
+    selected = st.sidebar.multiselect(label, values, default=[], help=help_text, key=key)
+    if not col:
+        return None
+    return {'col': col, 'val': selected, 'op': 'in', 'apply_to': apply_to or []}
+
+
+def _build_sidebar_filters() -> dict:
+    try:
+        st.sidebar.markdown('---')
+        st.sidebar.markdown('### 🔍 Apply Filters')
+        enr_cols = _tbl_cols('uae_fact_enrollment')
+        sch_cols = _tbl_cols('uae_fact_schools')
+        tch_cols = _tbl_cols('uae_fact_teachers_emirate')
+        pf_cols = _tbl_cols('uae_fact_pass_fail')
+
+        emirate_col = _pick_col(enr_cols, 'region_en', 'emirate', 'emirate_en', 'region')
+        edu_type_col = _pick_col(enr_cols, 'education_type', 'school_type', 'edu_type', 'type')
+        curriculum_col = _pick_col(sch_cols, 'curriculum_en', 'curriculum', 'curriculum_type')
+        gender_col = _pick_col(enr_cols, 'gender', 'student_gender')
+        nat_col = _pick_col(enr_cols, 'nationality_cat', 'nationality_category', 'nationality')
+        cycle_col = _pick_col(pf_cols, 'cycle', 'education_cycle', 'grade_level')
+
+        emirates = _distinct('uae_fact_enrollment', emirate_col) if emirate_col else []
+        state_value = st.sidebar.selectbox('🗺️ Select State/UT', emirates, key='uae_state_exact') if emirates else None
+        curriculum_options = ['All'] + (_distinct('uae_fact_schools', curriculum_col) if curriculum_col else [])
+        district_value = st.sidebar.selectbox('🏘️ Select District', curriculum_options, index=0, key='uae_district_exact') if curriculum_options else 'All'
+        education_options = ['All'] + (_distinct('uae_fact_enrollment', edu_type_col) if edu_type_col else [])
+        block_value = st.sidebar.selectbox('📍 Select Block/Taluk', education_options, index=0, key='uae_block_exact') if education_options else 'All'
+        gender_options = ['All'] + (_distinct('uae_fact_enrollment', gender_col) if gender_col else [])
+        location_value = st.sidebar.selectbox('🌆 Location', gender_options, index=0, key='uae_location_exact') if gender_options else 'All'
+
+        filters = {}
+        if emirate_col and state_value:
+            filters['state'] = {'col': emirate_col, 'val': state_value}
+        if curriculum_col and district_value:
+            filters['district'] = {'col': curriculum_col, 'val': district_value, 'apply_to': ['uae_fact_schools']}
+        if edu_type_col and block_value:
+            filters['block'] = {'col': edu_type_col, 'val': block_value}
+        if gender_col and location_value:
+            filters['location'] = {'col': gender_col, 'val': location_value, 'apply_to': ['uae_fact_enrollment', 'uae_fact_student_scores', 'uae_fact_pass_fail']}
+
+        school_type_filter = _uae_exact_multiselect('📖 School Type', _distinct('uae_fact_enrollment', edu_type_col) if edu_type_col else [], 'uae_school_type_exact', 'Mapped to available UAE education-type values.', ['uae_fact_enrollment', 'uae_fact_schools', 'uae_fact_teachers_emirate', 'uae_fact_pass_fail'], edu_type_col)
+        if school_type_filter:
+            filters['school_type_new'] = school_type_filter
+        management_filter = _uae_exact_multiselect('🏛️ Management Type', _distinct('uae_fact_schools', curriculum_col) if curriculum_col else [], 'uae_management_exact', 'Mapped to available UAE curriculum / management values.', ['uae_fact_schools'], curriculum_col)
+        if management_filter:
+            filters['management_groups'] = management_filter
+        category_filter = _uae_exact_multiselect('📚 School Category (Grade Level)', _distinct('uae_fact_pass_fail', cycle_col) if cycle_col else [], 'uae_category_exact', 'Mapped to available UAE education-cycle values.', ['uae_fact_pass_fail'], cycle_col)
+        if category_filter:
+            filters['school_categories'] = category_filter
+        board_filter = _uae_exact_multiselect('📚 Board Affiliation', _distinct('uae_fact_enrollment', nat_col) if nat_col else [], 'uae_board_exact', 'Mapped to available UAE nationality / board-equivalent values.', ['uae_fact_enrollment', 'uae_fact_student_nationalities'], nat_col)
+        if board_filter:
+            filters['boards'] = board_filter
+
+        active = []
+        for key, val in filters.items():
+            if str(key).startswith('_'):
+                continue
+            value = val.get('val')
+            if isinstance(value, list):
+                active.extend(value)
+            elif value not in (None, '', 'All'):
+                active.append(str(value))
+        if active:
+            st.sidebar.markdown('---')
+            st.sidebar.markdown('### ✅ Active Filters')
+            for item in active:
+                st.sidebar.markdown(f'- {item}')
+        return filters
+    except Exception as ex:
+        st.sidebar.warning(f'⚠️ UAE filter error: {ex}')
+        return {}
+
+
+def render_uae_state_dashboard():
+    if _inject_css:
+        _inject_css()
+    st.markdown(UAE_CSS, unsafe_allow_html=True)
+    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
+
+    filters = _build_sidebar_filters()
+    overview = _uae_overview_metrics(filters)
+    selected_state = filters.get('state', {}).get('val', 'UAE')
+
+    st.markdown(f'<div class="section-header">📊 Overview: {selected_state}</div>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric('🏫 Total Schools', _fmt(overview.get('total_schools', 0)))
+    with col2:
+        st.metric('🎓 Schools with Enrollment', _fmt(overview.get('schools_with_enrollment', 0)))
+    with col3:
+        st.metric('🗺️ Districts', _fmt(overview.get('total_districts', 0)))
+    with col4:
+        st.metric('📊 State PTR', overview.get('state_ptr', 'N/A'))
+    col5, col6 = st.columns(2)
+    with col5:
+        st.metric('👥 Total Students', _fmt(overview.get('total_students', 0)))
+    with col6:
+        st.metric('👨‍🏫 Total Teachers', _fmt(overview.get('total_teachers', 0)))
+
+    st.markdown('<div class="section-header">📚 Grade-Level / Education-Type Enrollment</div>', unsafe_allow_html=True)
+    edu_df = _uae_education_type_breakdown(filters)
+    if not edu_df.empty:
+        if 'gender' in edu_df.columns:
+            fig = px.bar(edu_df, x='education_type', y='students', color='gender', barmode='group', color_discrete_sequence=['#3498db', '#e74c3c'])
+        else:
+            fig = px.bar(edu_df, x='education_type', y='students', color='students', color_continuous_scale='Viridis')
+        fig.update_layout(title='Grade-Level / Education-Type Enrollment', xaxis_title='Grade Level / Education Type', yaxis_title='Students', xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120), plot_bgcolor='white', paper_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.dataframe(edu_df.rename(columns={'education_type': 'Grade Level / Education Type', 'gender': 'Gender', 'students': 'Students'}), use_container_width=True, hide_index=True)
+    else:
+        st.info('No grade-level data is available for current filters.')
+
+    st.markdown('<div class="section-header">📍 District-Level PTR Analysis</div>', unsafe_allow_html=True)
+    district_df = _uae_emirate_analysis(filters)
+    if not district_df.empty:
+        display_df = district_df.rename(columns={'emirate': 'District', 'total_schools': 'Total Schools', 'total_students': 'Total Students', 'total_teachers': 'Total Teachers', 'PTR': 'PTR'})
+        st.dataframe(display_df[['District', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']], use_container_width=True, hide_index=True)
+        fig = px.bar(district_df.head(20), x='emirate', y='ptr_ratio', title='District PTR Comparison (Top 20)', labels={'emirate': 'District', 'ptr_ratio': 'PTR'}, color='ptr_ratio', color_continuous_scale='RdYlGn_r', custom_data=['PTR'])
+        fig.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
+        fig.update_layout(xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120), plot_bgcolor='white', paper_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.download_button('📥 Download District Data (CSV)', display_df[['District', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']].to_csv(index=False), f'district_analysis_{str(selected_state).lower().replace(" ", "_")}.csv', 'text/csv', key='uae_district_download_exact')
+    else:
+        st.info('No district-level data available for the selected filters.')
+
+    st.markdown('<div class="section-header">🏫 School Directory</div>', unsafe_allow_html=True)
+    directory_df = _uae_school_directory_summary(filters)
+    if not directory_df.empty:
+        show_df = directory_df.rename(columns={'emirate': 'District', 'curriculum': 'Curriculum', 'school_level': 'School Level', 'total_schools': 'Total Schools'})
+        st.dataframe(show_df, use_container_width=True, hide_index=True)
+        st.download_button('📥 Download School Directory (CSV)', show_df.to_csv(index=False), f'school_directory_{str(selected_state).lower().replace(" ", "_")}.csv', 'text/csv', key='uae_directory_download_exact')
+    else:
+        st.info('No school directory summary is available for the selected filters.')
+
+    st.markdown('---')
+    st.markdown("<div style='text-align:center;color:#757575;font-size:.85rem;'><strong>TutorCloud Global Dashboard</strong><br>© 2026 TutorCloud. All rights reserved.</div>", unsafe_allow_html=True)

@@ -627,61 +627,57 @@ def render_au_state_dashboard() -> None:
     ]
     _render_kpi_cards(cards, per_row=4)
 
+    st.markdown("### 📍 District-Level PTR Analysis")
     district_df = _district_analysis(schools_df)
-    _render_subsection("District PTR Analysis")
-    _display_df(district_df[[c for c in ["district_name", "total_schools", "total_students", "total_teachers", "PTR"] if c in district_df.columns]])
+    if not district_df.empty:
+        display_district_df = district_df[[c for c in ["district_name", "total_schools", "total_students", "total_teachers", "PTR"] if c in district_df.columns]].copy()
+        _display_df(display_district_df)
+        fig = px.bar(
+            district_df.head(20),
+            x="district_name",
+            y="ptr_ratio",
+            color="ptr_ratio",
+            color_continuous_scale="RdYlGn_r",
+            custom_data=["PTR"],
+        )
+        fig.update_traces(hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>")
+        fig = _style_chart(fig, title="District-Level PTR Analysis (Top 20)", x_title="District", y_title="PTR", height=420)
+        st.plotly_chart(fig, use_container_width=True)
+        csv = display_district_df.to_csv(index=False)
+        st.download_button("📥 Download District Analysis CSV", csv, f"district_analysis_{filters.get('state_name') or 'australia'}.csv", "text/csv")
+    else:
+        st.info("No district-level data available for the selected filters.")
 
-    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        _render_subsection("District-wise Students")
-        if not district_df.empty:
-            fig = px.bar(district_df.head(15), x="district_name", y="total_students", color_discrete_sequence=[INDIA_UI["students"]])
-            fig = _style_chart(fig, title="", x_title="District", y_title="Students", height=380)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No district data available.")
-    with col2:
-        _render_subsection("District-wise PTR")
-        if not district_df.empty:
-            fig = px.line(district_df.head(15), x="district_name", y="ptr_ratio", markers=True)
-            fig = _style_chart(fig, title="", x_title="District", y_title="PTR", height=380)
-            fig.update_yaxes(ticksuffix=":1")
-            for tr in fig.data:
-                tr.name = "PTR"
-                tr.line.color = INDIA_UI["ptr"]
-                tr.marker.color = INDIA_UI["ptr"]
-                tr.hovertemplate = "District=%{x}<br>PTR=%{y:.0f}:1<extra></extra>"
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No PTR data available.")
-
-    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-    _render_subsection("Grade-wise Enrollment Breakdown")
+    st.markdown("### 📚 Grade-Level Enrollment")
     grade_df = _fetch_grade_enrollment(filters)
     if not grade_df.empty:
         fig = px.bar(grade_df, x="grade_label", y="enrolled_students", color_discrete_sequence=[INDIA_UI["students"]])
-        fig = _style_chart(fig, title="", x_title="Grade", y_title="Students", height=380)
+        fig = _style_chart(fig, title="Grade-Level Enrollment", x_title="Grade", y_title="Students", height=380)
         st.plotly_chart(fig, use_container_width=True)
         _display_df(grade_df)
+        st.download_button("📥 Download Grade Enrollment CSV", grade_df.to_csv(index=False), f"grade_enrollment_{filters.get('state_name') or 'australia'}.csv", "text/csv")
     else:
         st.info("No grade enrollment data available for current filters.")
 
-    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-    _render_subsection("School Directory")
-    school_cols = [c for c in ["school_id", "school_name", "district_name", "suburb", "postcode", "management_type", "school_level", "total_students", "fte_teaching_staff", "student_teacher_ratio"] if c in schools_df.columns]
+    st.markdown("### 🏫 School Directory")
+    school_cols = [c for c in ["school_id", "school_name", "district_name", "suburb", "postcode", "management_type", "school_level", "delivery_model", "total_students", "fte_teaching_staff", "student_teacher_ratio"] if c in schools_df.columns]
     display_df = schools_df[school_cols].copy() if school_cols else schools_df.copy()
     if not display_df.empty and "total_students" in display_df.columns:
         display_df = display_df.sort_values("total_students", ascending=False, na_position="last")
     _display_df(display_df)
-
+    if not display_df.empty:
+        st.download_button("📥 Download School Directory CSV", display_df.to_csv(index=False), f"school_directory_{filters.get('state_name') or 'australia'}.csv", "text/csv")
 
 def render_au_analytics() -> None:
     _inject_au_css()
-    _render_top_header("Education Analytics - Australia 2025")
-    _render_section_header("Analytics", icon="📈")
+    st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
 
     base_states_df = _safe_state_df()
+    if base_states_df.empty:
+        st.warning("No Australia analytics data is available.")
+        return
+
     filters = _analytics_sidebar_filters(base_states_df)
     school_filters = {
         "state_name": filters.get("state_name"),
@@ -694,134 +690,443 @@ def render_au_analytics() -> None:
         "offset": 0,
     }
     schools_df = _safe_school_df(**school_filters)
-
+    states_df = base_states_df.copy()
     if filters.get("state_name"):
-        states_df = base_states_df[base_states_df["state_name"] == filters["state_name"]].copy()
-    else:
-        states_df = base_states_df.copy()
+        states_df = states_df[states_df["state_name"] == filters["state_name"]].copy()
 
-    agg_data = _analytics_aggregate(schools_df if not schools_df.empty else pd.DataFrame(), states_df)
-    _render_metric_cards_overview(agg_data)
-
-    tabs = st.tabs(["Overview", "District Analysis", "Comparative Analysis", "Custom Reports"])
+    tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
 
     with tabs[0]:
-        col1, col2 = st.columns(2)
-        with col1:
-            _render_subsection("State-wise Total Students")
-            if not states_df.empty:
-                fig = px.bar(states_df.sort_values("total_students", ascending=False), x="state_name", y="total_students", color_discrete_sequence=[INDIA_UI["students"]])
-                fig = _style_chart(fig, title="", x_title="State", y_title="Students", height=400)
-                st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            _render_subsection("State-wise Teachers")
-            if not states_df.empty:
-                fig = px.bar(states_df.sort_values("fte_teaching_staff", ascending=False), x="state_name", y="fte_teaching_staff", color_discrete_sequence=[INDIA_UI["teachers"]])
-                fig = _style_chart(fig, title="", x_title="State", y_title="Teachers", height=400)
-                st.plotly_chart(fig, use_container_width=True)
+        st.markdown("### 🗺️ Geographic Heatmaps")
+        st.markdown("Interactive maps showing PTR, enrollment density by state/district")
+        c1, c2 = st.columns([1, 3])
+        with c1:
+            metric_choice = st.selectbox(
+                "Select Metric to Visualize",
+                ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
+                key="au_map_metric",
+            )
+        with c2:
+            level = st.radio("Level", ["State", "District"], horizontal=True, key="au_map_level")
+
+        if level == "State":
+            df_map = base_states_df.copy()
+            location_col = "state_name"
+        else:
+            states = base_states_df["state_name"].dropna().tolist() if "state_name" in base_states_df.columns else []
+            selected_state = st.selectbox("Select State", states, key="au_map_state_select") if states else None
+            df_map = _safe_district_df(selected_state) if selected_state else pd.DataFrame()
+            if not df_map.empty:
+                df_map = df_map.rename(columns={"schools": "total_schools", "fte_teaching_staff": "total_teachers", "student_teacher_ratio": "ptr"})
+                if "students_per_school" not in df_map.columns and "total_students" in df_map.columns and "total_schools" in df_map.columns:
+                    df_map["students_per_school"] = df_map.apply(lambda r: round(_num(r.get("total_students")) / _num(r.get("total_schools")), 2) if _num(r.get("total_schools")) > 0 else None, axis=1)
+            location_col = "district_name"
+
+        metric_map = {
+            "PTR (Pupil-Teacher Ratio)": "ptr",
+            "Students per School": "students_per_school",
+            "Total Students": "total_students",
+            "Total Schools": "total_schools",
+        }
+        metric_col = metric_map[metric_choice]
+
+        if not df_map.empty and metric_col in df_map.columns:
+            df_chart = df_map.sort_values(metric_col, ascending=False).head(20).copy()
+            if metric_col == "ptr":
+                df_chart["ptr_formatted"] = df_chart[metric_col].apply(_fmt_ptr)
+                fig = px.bar(
+                    df_chart,
+                    x=location_col,
+                    y=metric_col,
+                    title=f"{metric_choice} by {level} (Top 20)",
+                    labels={metric_col: metric_choice, location_col: level},
+                    color=metric_col,
+                    color_continuous_scale="RdYlGn_r",
+                    custom_data=["ptr_formatted"],
+                )
+                fig.update_traces(hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>")
+            else:
+                fig = px.bar(
+                    df_chart,
+                    x=location_col,
+                    y=metric_col,
+                    title=f"{metric_choice} by {level} (Top 20)",
+                    labels={metric_col: metric_choice, location_col: level},
+                    color=metric_col,
+                    color_continuous_scale="Viridis",
+                )
+            fig.update_layout(xaxis_tickangle=-45, showlegend=True, margin=dict(l=60, r=40, t=80, b=120))
+            st.plotly_chart(fig, use_container_width=True)
+            table_df = df_map.copy()
+            if "ptr" in table_df.columns:
+                table_df["ptr"] = table_df["ptr"].apply(_fmt_ptr)
+            _display_df(table_df)
+        else:
+            st.warning("No data available for selected filters")
 
     with tabs[1]:
-        _render_subsection("District Analysis")
-        selected_state = filters.get("state_name") or (base_states_df["state_name"].iloc[0] if not base_states_df.empty else None)
-        district_df = _safe_district_df(selected_state) if selected_state else pd.DataFrame()
-        if filters.get("district_name") and not district_df.empty:
-            district_df = district_df[district_df["district_name"] == filters["district_name"]]
-        _display_df(district_df)
-        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-        if not district_df.empty:
-            fig = px.bar(district_df.sort_values("total_students", ascending=False).head(20), x="district_name", y="total_students", color_discrete_sequence=[INDIA_UI["students"]])
-            fig = _style_chart(fig, title="", x_title="District", y_title="Students", height=420)
-            st.plotly_chart(fig, use_container_width=True)
+        filter_state = st.selectbox("Select State (All for National)", ["All"] + base_states_df["state_name"].dropna().tolist(), key="au_perf_state")
+        if filter_state != "All":
+            perf_districts = _safe_district_df(filter_state)
+            district_options = perf_districts.get("district_name", pd.Series(dtype=str)).dropna().tolist() if not perf_districts.empty else []
+            filter_district = st.selectbox("Select District (All for State)", ["All"] + district_options, key="au_perf_district")
+        else:
+            perf_districts = pd.DataFrame()
+            filter_district = "All"
+
+        if filter_state == "All":
+            perf_df = base_states_df.rename(columns={"schools": "total_schools", "fte_teaching_staff": "total_teachers", "student_teacher_ratio": "ptr"}).copy()
+            agg_data = {
+                "total_schools": _num(perf_df["total_schools"].sum()) if "total_schools" in perf_df.columns else 0,
+                "total_students": _num(perf_df["total_students"].sum()) if "total_students" in perf_df.columns else 0,
+                "total_teachers": _num(perf_df["total_teachers"].sum()) if "total_teachers" in perf_df.columns else 0,
+            }
+        elif filter_district == "All":
+            perf_df = _safe_district_df(filter_state).rename(columns={"schools": "total_schools", "fte_teaching_staff": "total_teachers", "student_teacher_ratio": "ptr"}).copy()
+            agg_data = {
+                "total_schools": _num(perf_df["total_schools"].sum()) if "total_schools" in perf_df.columns else 0,
+                "total_students": _num(perf_df["total_students"].sum()) if "total_students" in perf_df.columns else 0,
+                "total_teachers": _num(perf_df["total_teachers"].sum()) if "total_teachers" in perf_df.columns else 0,
+            }
+        else:
+            perf_df = _safe_district_df(filter_state).rename(columns={"schools": "total_schools", "fte_teaching_staff": "total_teachers", "student_teacher_ratio": "ptr"}).copy()
+            perf_df = perf_df[perf_df["district_name"].str.upper() == filter_district.upper()] if not perf_df.empty else pd.DataFrame()
+            row = perf_df.iloc[0].to_dict() if not perf_df.empty else {}
+            agg_data = {
+                "total_schools": row.get("total_schools", 0),
+                "total_students": row.get("total_students", 0),
+                "total_teachers": row.get("total_teachers", 0),
+            }
+        agg_data["ptr"] = round(_num(agg_data["total_students"]) / _num(agg_data["total_teachers"])) if _num(agg_data["total_teachers"]) > 0 else None
+        _render_metric_cards_overview(agg_data)
+        if filter_state == "All":
+            table_df = base_states_df.rename(columns={"schools": "total_schools", "fte_teaching_staff": "total_teachers", "student_teacher_ratio": "ptr"})
+        elif filter_district == "All":
+            table_df = _safe_district_df(filter_state).rename(columns={"schools": "total_schools", "fte_teaching_staff": "total_teachers", "student_teacher_ratio": "ptr"})
+        else:
+            table_df = perf_df
+        if not table_df.empty:
+            _display_df(table_df)
 
     with tabs[2]:
         st.markdown("### 🔍 Comparative Analysis Tool")
         st.markdown("Compare two locations side-by-side across all key metrics")
-        comp_level = st.radio("Comparison Level", ["State vs State", "District vs District"], horizontal=True, key="comp_level")
+        comp_level = st.radio("Comparison Level", ["State vs State", "District vs District"], horizontal=True, key="au_comp_level")
         col1, col2 = st.columns(2)
-
         if comp_level == "State vs State":
             states = base_states_df["state_name"].dropna().tolist() if "state_name" in base_states_df.columns else []
             with col1:
                 st.markdown("#### 📍 Location 1")
-                state1 = st.selectbox("State", states, key="comp_state1")
+                state1 = st.selectbox("State", states, key="au_comp_state1")
             with col2:
                 st.markdown("#### 📍 Location 2")
-                state2 = st.selectbox("State", states, key="comp_state2")
-            if st.button("🔄 Compare", type="primary"):
+                state2 = st.selectbox("State", states, key="au_comp_state2")
+            if st.button("🔄 Compare", type="primary", key="au_comp_btn"):
                 comparison = _comparison_df_state(base_states_df, state1, state2)
                 if not comparison.empty:
-                    st.dataframe(comparison.rename(columns=lambda x: x.replace("_", " ").title().replace("Ptr", "PTR")), use_container_width=True, hide_index=True)
-                    csv = comparison.to_csv(index=False)
-                    st.download_button("📥 Download Comparison CSV", csv, f"comparison_{state1}_vs_{state2}.csv", "text/csv")
+                    st.dataframe(comparison, use_container_width=True, hide_index=True)
+                    st.download_button("📥 Download Comparison CSV", comparison.to_csv(index=False), f"comparison_{state1}_vs_{state2}.csv", "text/csv")
         else:
             states = base_states_df["state_name"].dropna().tolist() if "state_name" in base_states_df.columns else []
             with col1:
                 st.markdown("#### 📍 Location 1")
-                state1 = st.selectbox("State", states, key="comp_dist_state1")
+                state1 = st.selectbox("State", states, key="au_comp_dist_state1")
                 districts1 = _safe_district_df(state1).get("district_name", pd.Series(dtype=str)).dropna().tolist() if state1 else []
-                district1 = st.selectbox("District", districts1, key="comp_district1") if districts1 else None
+                district1 = st.selectbox("District", districts1, key="au_comp_district1") if districts1 else None
             with col2:
                 st.markdown("#### 📍 Location 2")
-                state2 = st.selectbox("State", states, key="comp_dist_state2")
+                state2 = st.selectbox("State", states, key="au_comp_dist_state2")
                 districts2 = _safe_district_df(state2).get("district_name", pd.Series(dtype=str)).dropna().tolist() if state2 else []
-                district2 = st.selectbox("District", districts2, key="comp_district2") if districts2 else None
-            if st.button("🔄 Compare", type="primary", key="comp_dist_btn") and district1 and district2:
+                district2 = st.selectbox("District", districts2, key="au_comp_district2") if districts2 else None
+            if st.button("🔄 Compare", type="primary", key="au_comp_dist_btn") and district1 and district2:
                 comparison = _comparison_df_district(state1, district1, state2, district2)
                 if not comparison.empty:
-                    st.dataframe(comparison.rename(columns=lambda x: x.replace("_", " ").title().replace("Ptr", "PTR")), use_container_width=True, hide_index=True)
+                    st.dataframe(comparison, use_container_width=True, hide_index=True)
+                    st.download_button("📥 Download Comparison CSV", comparison.to_csv(index=False), f"comparison_{district1}_vs_{district2}.csv", "text/csv")
 
     with tabs[3]:
         st.markdown("### 📝 Custom Report Builder")
         st.markdown("Build custom reports with flexible dimensions and metrics")
         st.markdown("#### Step 1: Select Dimensions")
-        dimensions = st.multiselect("Choose grouping dimensions", ["State", "District", "Management", "School Level"], default=["State"], key="report_dims")
+        dimensions = st.multiselect(
+            "Choose grouping dimensions",
+            ["State", "District", "Management", "School Level", "Delivery Model"],
+            default=["State"],
+            key="au_report_dims",
+        )
         st.markdown("#### Step 2: Select Metrics")
-        metrics = st.multiselect("Choose metrics to include", ["Schools", "Students", "Teachers", "PTR"], default=["Schools", "Students", "PTR"], key="report_metrics")
-
-        if st.button("📊 Generate Report", type="primary"):
+        metrics = st.multiselect(
+            "Choose metrics to include",
+            ["Schools", "Students", "Teachers", "PTR"],
+            default=["Schools", "Students", "PTR"],
+            key="au_report_metrics",
+        )
+        if st.button("📊 Generate Report", type="primary", key="au_generate_report"):
             if not dimensions or not metrics:
                 st.warning("Please select at least one dimension and one metric")
+            elif schools_df.empty:
+                st.warning("No data found for selected criteria")
             else:
-                with st.spinner("Generating report..."):
-                    df_report = schools_df.copy()
-                    if df_report.empty:
-                        st.warning("No data found for selected criteria")
-                    else:
-                        dim_map = {
-                            "State": "state_name",
-                            "District": "district_name",
-                            "Management": "management_type",
-                            "School Level": "school_level",
-                        }
-                        group_cols = [dim_map[d] for d in dimensions if dim_map[d] in df_report.columns]
-                        if not group_cols:
-                            st.warning("Selected dimensions are not available")
-                        else:
-                            agg = df_report.groupby(group_cols, dropna=False).agg(
-                                total_schools=("school_id", pd.Series.nunique),
-                                total_students=("total_students", "sum"),
-                                total_teachers=("fte_teaching_staff", "sum"),
-                            ).reset_index()
-                            agg["ptr"] = agg.apply(lambda r: round(r["total_students"] / r["total_teachers"]) if _num(r["total_teachers"]) > 0 else None, axis=1)
-                            cols_to_show = group_cols.copy()
-                            if "Schools" in metrics:
-                                cols_to_show.append("total_schools")
-                            if "Students" in metrics:
-                                cols_to_show.append("total_students")
-                            if "Teachers" in metrics:
-                                cols_to_show.append("total_teachers")
-                            if "PTR" in metrics:
-                                cols_to_show.append("ptr")
-                            df_display = agg[cols_to_show]
-                            st.success(f"Report generated successfully! ({len(df_display)} rows)")
-                            st.dataframe(df_display.rename(columns=lambda x: x.replace("_", " ").title().replace("Ptr", "PTR")), use_container_width=True, hide_index=True)
-                            csv = df_display.to_csv(index=False)
-                            st.download_button("📥 Download CSV", csv, "custom_report.csv", "text/csv")
-                            try:
-                                buffer = BytesIO()
-                                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                                    df_display.to_excel(writer, index=False, sheet_name="Report")
-                                buffer.seek(0)
-                                st.download_button("📊 Download Excel", buffer, "custom_report.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                            except Exception:
-                                pass
+                dim_map = {
+                    "State": "state_name",
+                    "District": "district_name",
+                    "Management": "management_type",
+                    "School Level": "school_level",
+                    "Delivery Model": "delivery_model",
+                }
+                report_df = schools_df.copy()
+                if "school_id" not in report_df.columns:
+                    report_df["school_id"] = range(1, len(report_df) + 1)
+                if "total_students" not in report_df.columns:
+                    report_df["total_students"] = 0
+                if "fte_teaching_staff" not in report_df.columns:
+                    report_df["fte_teaching_staff"] = 0
+                group_cols = [dim_map[d] for d in dimensions if dim_map[d] in report_df.columns]
+                if not group_cols:
+                    st.warning("Selected dimensions are not available")
+                else:
+                    agg = report_df.groupby(group_cols, dropna=False).agg(
+                        total_schools=("school_id", pd.Series.nunique),
+                        total_students=("total_students", "sum"),
+                        total_teachers=("fte_teaching_staff", "sum"),
+                    ).reset_index()
+                    agg["ptr"] = agg.apply(lambda r: round(_num(r["total_students"]) / _num(r["total_teachers"])) if _num(r["total_teachers"]) > 0 else None, axis=1)
+                    cols_to_show = group_cols.copy()
+                    if "Schools" in metrics:
+                        cols_to_show.append("total_schools")
+                    if "Students" in metrics:
+                        cols_to_show.append("total_students")
+                    if "Teachers" in metrics:
+                        cols_to_show.append("total_teachers")
+                    if "PTR" in metrics:
+                        cols_to_show.append("ptr")
+                    display_df = agg[cols_to_show].copy()
+                    st.success(f"Report generated successfully! ({len(display_df)} rows)")
+                    _display_df(display_df)
+                    st.download_button("📥 Download CSV", display_df.to_csv(index=False), "au_custom_report.csv", "text/csv")
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                        display_df.to_excel(writer, index=False, sheet_name="Report")
+                    buffer.seek(0)
+                    st.download_button("📊 Download Excel", buffer.getvalue(), "au_custom_report.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# === INDIA_PARITY_OVERRIDE_AU ===
+def _au_unique_values(df: pd.DataFrame, col: str) -> list[str]:
+    if df is None or df.empty or col not in df.columns:
+        return []
+    vals = []
+    for raw in df[col].fillna('').tolist():
+        text_val = str(raw).strip()
+        if text_val and text_val.lower() != 'nan' and text_val not in vals:
+            vals.append(text_val)
+    return sorted(vals, key=lambda x: x.lower())
+
+
+def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
+    st.sidebar.markdown('---')
+    st.sidebar.markdown('### 🔍 Apply Filters')
+    state_options = _au_unique_values(states_df, 'state_name')
+    if not state_options:
+        return {}
+
+    state = st.sidebar.selectbox('🗺️ Select State/UT', state_options, key='au_state_filter_exact')
+    district_options = ['All'] + _au_unique_values(_safe_district_df(state), 'district_name')
+    district = st.sidebar.selectbox('🏘️ Select District', district_options, index=0, key=f'au_district_filter_exact_{state}')
+
+    scope_df = _safe_school_df(
+        state_name=state,
+        district_name=None if district == 'All' else district,
+        management_type=None,
+        school_level=None,
+        delivery_model=None,
+        search=None,
+        limit=50000,
+        offset=0,
+    )
+
+    block_options = ['All'] + _au_unique_values(scope_df, 'suburb')
+    block_name = st.sidebar.selectbox('📍 Select Block/Taluk', block_options, index=0, key=f'au_block_filter_exact_{state}_{district}')
+
+    location_options = ['All'] + _au_unique_values(scope_df, 'postcode')
+    location_value = st.sidebar.selectbox('🌆 Location', location_options, index=0, key=f'au_location_filter_exact_{state}_{district}_{block_name}')
+
+    school_type_options = _au_unique_values(scope_df, 'school_level')
+    management_options = _au_unique_values(scope_df, 'management_type')
+    category_options = _au_unique_values(scope_df, 'school_level')
+    board_options = _au_unique_values(scope_df, 'delivery_model')
+
+    school_type_new = st.sidebar.multiselect('📖 School Type', school_type_options, default=[], help='Australia source has no direct boys/girls/co-ed split; using available school-level values.', key=f'au_school_type_exact_{state}')
+    management_groups = st.sidebar.multiselect('🏛️ Management Type', management_options, default=[], key=f'au_management_exact_{state}')
+    school_categories = st.sidebar.multiselect('📚 School Category (Grade Level)', category_options, default=[], key=f'au_category_exact_{state}')
+    boards = st.sidebar.multiselect('📚 Board Affiliation', board_options, default=[], help='Will populate when board-equivalent source fields are available.', key=f'au_board_exact_{state}')
+
+    active_filters = []
+    for val in [state, None if district == 'All' else district, None if block_name == 'All' else block_name, None if location_value == 'All' else location_value]:
+        if val:
+            active_filters.append(val)
+    active_filters.extend([f'Management: {x}' for x in management_groups])
+    active_filters.extend([f'Category: {x}' for x in school_categories])
+    active_filters.extend([f'School Type: {x}' for x in school_type_new])
+    active_filters.extend([f'Board: {x}' for x in boards])
+    if active_filters:
+        st.sidebar.markdown('---')
+        st.sidebar.markdown('### ✅ Active Filters')
+        for item in active_filters:
+            st.sidebar.markdown(f'- {item}')
+
+    return {
+        'state_name': state,
+        'district_name': None if district == 'All' else district,
+        'block_name': None if block_name == 'All' else block_name,
+        'location_value': None if location_value == 'All' else location_value,
+        'school_type_new': school_type_new,
+        'management_groups': management_groups,
+        'school_categories': school_categories,
+        'school_levels': school_categories,
+        'boards': boards,
+        'search': None,
+        'limit': 50000,
+        'offset': 0,
+    }
+
+
+def _au_apply_exact_filters(df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    if filters.get('block_name') and 'suburb' in out.columns:
+        out = out[out['suburb'].astype(str).str.upper() == str(filters['block_name']).upper()]
+    if filters.get('location_value') and 'postcode' in out.columns:
+        out = out[out['postcode'].astype(str).str.upper() == str(filters['location_value']).upper()]
+    if filters.get('management_groups') and 'management_type' in out.columns:
+        out = out[out['management_type'].isin(filters['management_groups'])]
+    if filters.get('school_categories') and 'school_level' in out.columns:
+        out = out[out['school_level'].isin(filters['school_categories'])]
+    if filters.get('school_type_new') and 'school_level' in out.columns:
+        out = out[out['school_level'].isin(filters['school_type_new'])]
+    if filters.get('boards') and 'delivery_model' in out.columns and out['delivery_model'].notna().any():
+        out = out[out['delivery_model'].isin(filters['boards'])]
+    return out
+
+
+def _au_block_analysis(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty or 'suburb' not in df.columns:
+        return pd.DataFrame()
+    out = df.copy()
+    if 'school_id' not in out.columns:
+        out['school_id'] = range(1, len(out) + 1)
+    if 'total_students' not in out.columns:
+        out['total_students'] = 0
+    if 'fte_teaching_staff' not in out.columns:
+        out['fte_teaching_staff'] = 0
+    grp = out.groupby('suburb', dropna=False).agg(
+        total_schools=('school_id', pd.Series.nunique),
+        total_students=('total_students', 'sum'),
+        total_teachers=('fte_teaching_staff', 'sum'),
+    ).reset_index().rename(columns={'suburb': 'block'})
+    grp['ptr_ratio'] = grp.apply(lambda r: (r['total_students'] / r['total_teachers']) if _num(r['total_teachers']) > 0 else None, axis=1)
+    grp['PTR'] = grp['ptr_ratio'].apply(_fmt_ptr)
+    return grp.sort_values(['total_students', 'total_schools'], ascending=[False, False], na_position='last')
+
+
+def render_au_state_dashboard() -> None:
+    _inject_au_css()
+    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
+
+    states_df = _safe_state_df()
+    if states_df.empty:
+        st.warning('No Australia state data is available.')
+        return
+
+    filters = _state_sidebar_filters(states_df)
+    if not filters.get('state_name'):
+        st.info('👈 Please select a State/UT from the sidebar to view data')
+        return
+
+    schools_seed = _safe_school_df(
+        state_name=filters.get('state_name'),
+        district_name=filters.get('district_name'),
+        management_type=None,
+        school_level=None,
+        delivery_model=None,
+        search=filters.get('search'),
+        limit=filters.get('limit', 50000),
+        offset=0,
+    )
+    schools_df = _au_apply_exact_filters(schools_seed, filters)
+    if schools_df.empty:
+        st.warning('No data available for selected filters')
+        return
+
+    overview = _aggregate_state_overview(schools_df)
+    st.markdown(f'<div class="section-header">📊 Overview: {filters.get("state_name")}</div>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric('🏫 Total Schools', _fmt_int(overview.get('total_schools', 0)))
+    with col2:
+        st.metric('🎓 Schools with Enrollment', _fmt_int(overview.get('schools_with_enrollment', 0)))
+    with col3:
+        st.metric('🗺️ Districts', _fmt_int(overview.get('total_districts', 0)))
+    with col4:
+        st.metric('📊 State PTR', overview.get('state_ptr', 'N/A'))
+    col5, col6 = st.columns(2)
+    with col5:
+        st.metric('👥 Total Students', _fmt_int(overview.get('total_students', 0)))
+    with col6:
+        st.metric('👨‍🏫 Total Teachers', _fmt_int(overview.get('total_teachers', 0)))
+
+    st.markdown('<div class="section-header">📚 Grade-Level Enrollment</div>', unsafe_allow_html=True)
+    grade_df = _fetch_grade_enrollment(filters)
+    if not grade_df.empty:
+        fig_grades = px.bar(grade_df, x='grade_label', y='enrolled_students', color_discrete_sequence=[INDIA_UI['students']])
+        fig_grades = _style_chart(fig_grades, title='Grade-Level Enrollment', x_title='Grade', y_title='Students', height=380)
+        st.plotly_chart(fig_grades, use_container_width=True)
+        _display_df(grade_df)
+    else:
+        st.info('No grade enrollment data available for current filters.')
+
+    st.markdown('<div class="section-header">📍 District-Level PTR Analysis</div>', unsafe_allow_html=True)
+    district_df = _district_analysis(schools_df)
+    if not district_df.empty:
+        display_df = district_df[[c for c in ['district_name', 'total_schools', 'total_students', 'total_teachers', 'PTR'] if c in district_df.columns]].copy()
+        display_df.columns = ['District', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
+        _display_df(display_df)
+        fig_ptr = px.bar(district_df.head(20), x='district_name', y='ptr_ratio', color='ptr_ratio', color_continuous_scale='RdYlGn_r', custom_data=['PTR'])
+        fig_ptr.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
+        fig_ptr = _style_chart(fig_ptr, title='District PTR Comparison (Top 20 by School Count)', x_title='District', y_title='PTR', height=420)
+        st.plotly_chart(fig_ptr, use_container_width=True)
+        st.download_button('📥 Download District Data (CSV)', display_df.to_csv(index=False), f'district_analysis_{str(filters.get("state_name")).lower().replace(" ", "_")}.csv', 'text/csv')
+    else:
+        st.info('No district-level data available for the selected filters.')
+
+    if filters.get('district_name'):
+        st.markdown(f'<div class="section-header">🏘️ Block/Taluk-Level PTR Analysis: {filters.get("district_name")}</div>', unsafe_allow_html=True)
+        block_df = _au_block_analysis(schools_df)
+        if not block_df.empty:
+            display_block_df = block_df[[c for c in ['block', 'total_schools', 'total_students', 'total_teachers', 'PTR'] if c in block_df.columns]].copy()
+            display_block_df.columns = ['Block/Taluk', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
+            _display_df(display_block_df)
+            fig_block = px.bar(block_df.head(20), x='block', y='ptr_ratio', color='ptr_ratio', color_continuous_scale='RdYlGn_r', custom_data=['PTR'])
+            fig_block.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
+            fig_block = _style_chart(fig_block, title=f'Block/Taluk PTR Comparison in {filters.get("district_name")} (Top 20)', x_title='Block/Taluk', y_title='PTR', height=420)
+            st.plotly_chart(fig_block, use_container_width=True)
+            st.download_button('📥 Download Block/Taluk Data (CSV)', display_block_df.to_csv(index=False), f'block_analysis_{str(filters.get("district_name")).lower().replace(" ", "_")}.csv', 'text/csv', key='au_download_block_exact')
+        else:
+            st.info('No block-level data available for the selected district.')
+
+    st.markdown('<div class="section-header">🏫 School Directory</div>', unsafe_allow_html=True)
+    school_cols = [c for c in ['school_id', 'school_name', 'district_name', 'suburb', 'postcode', 'management_type', 'school_level', 'delivery_model', 'total_students', 'fte_teaching_staff', 'student_teacher_ratio'] if c in schools_df.columns]
+    directory_df = schools_df[school_cols].copy() if school_cols else schools_df.copy()
+    if 'student_teacher_ratio' in directory_df.columns:
+        directory_df['student_teacher_ratio'] = directory_df['student_teacher_ratio'].apply(_fmt_ptr)
+        directory_df = directory_df.rename(columns={'student_teacher_ratio': 'PTR'})
+    _display_df(directory_df)
+
+    st.markdown('---')
+    st.markdown("""
+        <div style='text-align: center; padding: 20px; margin-top: 40px; border-top: 1px solid #e0e0e0;'>
+        <p style='margin: 0; color: #666; font-size: 0.95rem;'>TutorCloud Global Dashboard</p>
+        <p style='margin: 5px 0 0 0; color: #666; font-size: 0.95rem;'>© 2026 TutorCloud. All rights reserved.</p>
+        </div>
+    """, unsafe_allow_html=True)

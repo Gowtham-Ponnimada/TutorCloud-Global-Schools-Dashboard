@@ -143,7 +143,9 @@ class AUDashboardService:
             NULL::text AS delivery_model,
             fst.total_students,
             fst.girls_students,
-            fst.boys_students
+            fst.boys_students,
+            fst.fte_teaching_staff,
+            fst.student_teacher_ratio
         FROM au.dim_schools ds
         LEFT JOIN au.fact_school_totals fst
           ON ds.school_year = fst.school_year

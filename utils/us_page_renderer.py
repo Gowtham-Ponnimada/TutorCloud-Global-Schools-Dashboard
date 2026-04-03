@@ -961,7 +961,7 @@ def render_us_state_dashboard():
     c4, c5, c6 = st.columns(3)
     c1.metric("TOTAL SCHOOLS", _fmt_int(k.get("total_schools")))
     c2.metric("SCHOOLS WITH ENROLLMENT", _fmt_int(k.get("schools_with_enrollment")))
-    c3.metric("DISTRICTS", _fmt_int(k.get("total_districts")))
+    c3.metric("TOTAL DISTRICTS", _fmt_int(k.get("total_districts")))
     c4.metric("STATE PTR", _fmt_ptr(k.get("ptr")))
     c5.metric("TOTAL STUDENTS", _fmt_int(k.get("total_students")))
     c6.metric("TOTAL TEACHERS", _fmt_int(k.get("total_teachers")))
@@ -1164,7 +1164,6 @@ def render_us_analytics():
 
     year_options = _available_school_years()
     default_year_index = year_options.index(DASHBOARD_YEAR) if DASHBOARD_YEAR in year_options else 0
-
     top_left, top_right = st.columns([4, 1.25])
     with top_left:
         st.markdown(
@@ -1177,7 +1176,6 @@ def render_us_analytics():
     st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
     st.info("School Management defaults to Govt. Private-school rows use NCES PSS 2021–2022; public-school rows use CCD 2024–2025.")
-
     if selected_year != DASHBOARD_YEAR:
         st.info("US analytics is currently backed by the loaded 2024–2025 NCES dataset. Additional years will appear here after they are ingested.")
 
@@ -1185,21 +1183,25 @@ def render_us_analytics():
 
     with tabs[0]:
         st.markdown("### 🗺️ Geographic Heatmaps")
-        st.markdown("Interactive maps showing PTR and enrollment intensity by state, county, and district")
-
-        geo_c1, geo_c2, geo_c3 = st.columns([1.3, 1.4, 1.8])
-        with geo_c1:
+        st.markdown("Interactive maps showing PTR, enrollment density by state/district")
+        col1, col2 = st.columns([1, 3])
+        with col1:
             metric_choice = st.selectbox(
                 "Select Metric to Visualize",
                 ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
-                key="us_geo_metric",
+                key="us_map_metric",
             )
-        with geo_c2:
-            level_choice = st.radio("Level", ["State", "County", "District"], horizontal=True, key="us_geo_level")
-        with geo_c3:
-            geo_state = "All"
-            if level_choice in ("County", "District"):
-                geo_state = st.selectbox("State Filter", ["All"] + _states(), index=0, key="us_geo_state")
+        with col2:
+            level = st.radio("Level", ["State", "District"], horizontal=True, key="us_map_level")
+
+        if level == "State":
+            df_map = _state_metric_frame(selected_year).rename(columns={"state_name": "state", "ptr": "ptr", "students_per_school": "students_per_school"})
+            location_col = "state"
+        else:
+            states = _states()
+            selected_state = st.selectbox("Select State", states, key="us_map_state_select") if states else None
+            df_map = _district_metric_frame(selected_state, selected_year).rename(columns={"location_name": "district"}) if selected_state else pd.DataFrame()
+            location_col = "district"
 
         metric_map = {
             "PTR (Pupil-Teacher Ratio)": "ptr",
@@ -1208,35 +1210,16 @@ def render_us_analytics():
             "Total Schools": "total_schools",
         }
         metric_col = metric_map[metric_choice]
-
-        if level_choice == "State":
-            df_map = _state_metric_frame(selected_year)
-            location_col = "state_name"
-            export_prefix = f"us_state_metrics_{selected_year.replace('-', '_')}"
-        elif level_choice == "County":
-            df_map = _county_metric_frame(geo_state, selected_year)
-            location_col = "location_name"
-            export_prefix = f"us_county_metrics_{selected_year.replace('-', '_')}"
-        else:
-            df_map = _district_metric_frame(geo_state, selected_year)
-            location_col = "location_name"
-            export_prefix = f"us_district_metrics_{selected_year.replace('-', '_')}"
-
-        if df_map.empty:
-            if level_choice == "County":
-                st.warning("County-level metrics are unavailable because county_name is not yet populated in us.dim_schools for the selected data.")
-            else:
-                st.info("No data available for the selected geographic level.")
-        else:
+        if not df_map.empty and metric_col in df_map.columns:
             df_chart = df_map.sort_values(metric_col, ascending=False).head(20).copy()
             if metric_col == "ptr":
-                df_chart["ptr_formatted"] = df_chart["ptr"].apply(lambda x: f"{int(round(float(x)))}:1" if pd.notna(x) and float(x) > 0 else "N/A")
+                df_chart["ptr_formatted"] = df_chart["ptr"].apply(_fmt_ptr)
                 fig = px.bar(
                     df_chart,
                     x=location_col,
                     y=metric_col,
-                    title=f"{metric_choice} by {level_choice} (Top 20)",
-                    labels={metric_col: metric_choice, location_col: level_choice},
+                    title=f"{metric_choice} by {level} (Top 20)",
+                    labels={metric_col: metric_choice, location_col: level},
                     color=metric_col,
                     color_continuous_scale="RdYlGn_r",
                     custom_data=["ptr_formatted"],
@@ -1247,125 +1230,139 @@ def render_us_analytics():
                     df_chart,
                     x=location_col,
                     y=metric_col,
-                    title=f"{metric_choice} by {level_choice} (Top 20)",
-                    labels={metric_col: metric_choice, location_col: level_choice},
+                    title=f"{metric_choice} by {level} (Top 20)",
+                    labels={metric_col: metric_choice, location_col: level},
                     color=metric_col,
                     color_continuous_scale="Viridis",
                 )
-
-            fig.update_layout(
-                xaxis_tickangle=-45,
-                showlegend=True,
-                margin=dict(l=60, r=40, t=80, b=120),
-                paper_bgcolor="white",
-                plot_bgcolor="white",
-                font=dict(family="Segoe UI"),
-            )
+            fig.update_layout(xaxis_tickangle=-45, showlegend=True, margin=dict(l=60, r=40, t=80, b=120))
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-            display_cols = _dedupe_keep_order([c for c in [location_col, "state_name", "county_name", "district_name", "total_schools", "total_students", "total_teachers", "students_per_school", "ptr"] if c in df_map.columns])
-            _render_dataframe(df_map[display_cols], use_container_width=True, hide_index=True)
-            _export_buttons(df_map[display_cols], export_prefix)
+            if "ptr" in df_map.columns:
+                df_display = df_map.copy()
+                df_display["ptr"] = df_display["ptr"].apply(_fmt_ptr)
+            else:
+                df_display = df_map
+            _render_dataframe(df_display, use_container_width=True, hide_index=True)
+        else:
+            st.warning("No data available for selected filters")
 
     with tabs[1]:
-        perf_state = st.selectbox("Select State (All for National)", ["All"] + _states(), index=0, key="us_perf_state")
-        perf_delivery_model = st.selectbox("School Type", ["All"] + _delivery_models(perf_state), index=0, key="us_perf_delivery_model")
-        perf_management_opts = ["All"] + _management_types(perf_state)
-        perf_management_index = perf_management_opts.index("Govt") if "Govt" in perf_management_opts else 0
-        perf_management_type = st.selectbox("School Management", perf_management_opts, index=perf_management_index, key="us_perf_management_type")
-        perf_filters = {"state": perf_state, "districts": [], "school_levels": [], "delivery_model": perf_delivery_model, "management_type": perf_management_type}
-        perf = _state_dashboard_kpis(perf_filters)
+        filter_state = st.selectbox("Select State (All for National)", ["All"] + _states(), key="us_perf_state_exact")
+        if filter_state != "All":
+            districts = _districts(filter_state)
+            filter_district = st.selectbox("Select District (All for State)", ["All"] + districts, key="us_perf_district_exact")
+        else:
+            filter_district = "All"
 
-        total_schools = float(perf.get("total_schools") or 0)
-        total_students = float(perf.get("total_students") or 0)
-        total_teachers = float(perf.get("total_teachers") or 0)
-        students_per_school = round(total_students / total_schools, 2) if total_schools > 0 else None
-        teachers_per_school = round(total_teachers / total_schools, 2) if total_schools > 0 else None
-
+        if filter_state == "All":
+            perf_df = _state_metric_frame(selected_year)
+            agg = {
+                "total_schools": perf_df["total_schools"].sum() if "total_schools" in perf_df.columns else 0,
+                "total_students": perf_df["total_students"].sum() if "total_students" in perf_df.columns else 0,
+                "total_teachers": perf_df["total_teachers"].sum() if "total_teachers" in perf_df.columns else 0,
+            }
+        elif filter_district == "All":
+            perf_df = _district_metric_frame(filter_state, selected_year)
+            agg = {
+                "total_schools": perf_df["total_schools"].sum() if "total_schools" in perf_df.columns else 0,
+                "total_students": perf_df["total_students"].sum() if "total_students" in perf_df.columns else 0,
+                "total_teachers": perf_df["total_teachers"].sum() if "total_teachers" in perf_df.columns else 0,
+            }
+        else:
+            perf_df = _district_metric_frame(filter_state, selected_year)
+            perf_df = perf_df[perf_df["location_name"].str.upper() == filter_district.upper()] if not perf_df.empty else pd.DataFrame()
+            row = perf_df.iloc[0].to_dict() if not perf_df.empty else {}
+            agg = {
+                "total_schools": row.get("total_schools", 0),
+                "total_students": row.get("total_students", 0),
+                "total_teachers": row.get("total_teachers", 0),
+            }
+        ptr = round(float(agg["total_students"]) / float(agg["total_teachers"])) if float(agg["total_teachers"] or 0) > 0 else None
+        students_per_school = round(float(agg["total_students"]) / float(agg["total_schools"]), 2) if float(agg["total_schools"] or 0) > 0 else None
+        teachers_per_school = round(float(agg["total_teachers"]) / float(agg["total_schools"]), 2) if float(agg["total_schools"] or 0) > 0 else None
         st.markdown("#### 📊 Key Performance Indicators")
         k1, k2, k3 = st.columns(3)
         k4, k5, k6 = st.columns(3)
-        k1.metric("Total Schools", _fmt_int(total_schools))
-        k2.metric("Total Students", _fmt_int(total_students))
-        k3.metric("Total Teachers", _fmt_int(total_teachers))
-        k4.metric("PTR", _fmt_ptr(perf.get("ptr")))
+        k1.metric("Total Schools", _fmt_int(agg["total_schools"]))
+        k2.metric("Total Students", _fmt_int(agg["total_students"]))
+        k3.metric("Total Teachers", _fmt_int(agg["total_teachers"]))
+        k4.metric("PTR", _fmt_ptr(ptr))
         k5.metric("Students per School", _fmt_float(students_per_school, 2))
         k6.metric("Teachers per School", _fmt_float(teachers_per_school, 2))
-
-        aux1, aux2 = st.columns(2)
-        with aux1:
-            st.caption(f"Schools with Enrollment: {_fmt_int(perf.get('schools_with_enrollment'))}")
-        with aux2:
-            st.caption(f"Districts Covered: {_fmt_int(perf.get('total_districts'))}")
-
-        perf_table = _district_kpi_table(perf_filters, 100) if perf_state != "All" else _state_metric_frame()
-        _render_dataframe(perf_table, use_container_width=True, hide_index=True)
-        _export_buttons(perf_table, "us_performance_metrics_2024_2025")
+        _render_dataframe(perf_df if not perf_df.empty else pd.DataFrame(), use_container_width=True, hide_index=True)
 
     with tabs[2]:
-        comp_level = st.radio("Comparison Level", ["State vs State", "District vs District"], horizontal=True, key="us_comp_level")
+        st.markdown("### 🔍 Comparative Analysis Tool")
+        st.markdown("Compare two locations side-by-side across all key metrics")
+        comp_level = st.radio("Comparison Level", ["State vs State", "District vs District"], horizontal=True, key="us_comp_level_exact")
+        col1, col2 = st.columns(2)
         if comp_level == "State vs State":
             states = _states()
-            c1, c2 = st.columns(2)
-            with c1:
-                left_state = st.selectbox("State A", states, index=0, key="us_cmp_a")
-            with c2:
-                right_state = st.selectbox("State B", states, index=1 if len(states) > 1 else 0, key="us_cmp_b")
-            cmp_df = _comparison_frame(left_state, right_state)
+            with col1:
+                st.markdown("#### 📍 Location 1")
+                left_state = st.selectbox("State", states, key="us_comp_state1_exact")
+            with col2:
+                st.markdown("#### 📍 Location 2")
+                right_state = st.selectbox("State", states, key="us_comp_state2_exact")
+            if st.button("🔄 Compare", type="primary", key="us_comp_btn_exact"):
+                cmp_df = _comparison_frame(left_state, right_state)
+                _render_dataframe(cmp_df, use_container_width=True, hide_index=True)
+                _export_buttons(cmp_df, "us_comparison_exact", csv_label="📥 Download Comparison CSV", excel_label="📊 Download Excel")
         else:
             states = _states()
-            c1, c2 = st.columns(2)
-            with c1:
-                left_state = st.selectbox("State A", states, index=0, key="us_cmp_d_a_state")
-                left_district = st.selectbox("District A", _districts(left_state), key="us_cmp_d_a")
-            with c2:
-                right_state = st.selectbox("State B", states, index=1 if len(states) > 1 else 0, key="us_cmp_d_b_state")
-                right_district = st.selectbox("District B", _districts(right_state), key="us_cmp_d_b")
-            cmp_df = _district_comparison_frame(left_state, left_district, right_state, right_district)
-        _render_dataframe(cmp_df, use_container_width=True, hide_index=True)
-        _export_buttons(cmp_df, "us_comparison_2024_2025", csv_label="📥 Download Comparison CSV", excel_label="📊 Download Excel")
+            with col1:
+                st.markdown("#### 📍 Location 1")
+                left_state = st.selectbox("State", states, key="us_comp_dist_state1_exact")
+                left_district = st.selectbox("District", _districts(left_state), key="us_comp_district1_exact")
+            with col2:
+                st.markdown("#### 📍 Location 2")
+                right_state = st.selectbox("State", states, key="us_comp_dist_state2_exact")
+                right_district = st.selectbox("District", _districts(right_state), key="us_comp_district2_exact")
+            if st.button("🔄 Compare", type="primary", key="us_comp_dist_btn_exact"):
+                cmp_df = _district_comparison_frame(left_state, left_district, right_state, right_district)
+                _render_dataframe(cmp_df, use_container_width=True, hide_index=True)
+                _export_buttons(cmp_df, "us_district_comparison_exact", csv_label="📥 Download Comparison CSV", excel_label="📊 Download Excel")
 
     with tabs[3]:
-        st.markdown("#### 📝 Custom Reports")
+        st.markdown("### 📝 Custom Report Builder")
+        st.markdown("Build custom reports with flexible dimensions and metrics")
+        st.markdown("#### Step 1: Select Dimensions")
         dimensions = st.multiselect(
-            "Choose Dimensions",
+            "Choose grouping dimensions",
             ["State", "District", "Location (City)", "School Type", "Institution Type", "District Type", "School Category"],
             default=["State"],
-            key="us_report_dims",
+            key="us_report_dims_exact",
         )
+        st.markdown("#### Step 2: Select Metrics")
         metrics = st.multiselect(
-            "Choose Metrics",
+            "Choose metrics to include",
             ["Schools", "Students", "Teachers", "PTR", "Students/School"],
             default=["Schools", "Students", "PTR"],
-            key="us_report_metrics",
+            key="us_report_metrics_exact",
         )
-        report_state = st.selectbox("Filter by State", ["All"] + _states(), index=0, key="us_report_state")
-        report_delivery_model = st.selectbox("Filter by School Type", ["All"] + _delivery_models(report_state), index=0, key="us_report_delivery_model")
+        report_state = st.selectbox("Filter by State", ["All"] + _states(), key="us_report_state_exact")
+        report_delivery_model = st.selectbox("Filter by School Type", ["All"] + _delivery_models(report_state), key="us_report_school_type_exact")
         report_management_opts = ["All"] + _management_types(report_state)
-        report_management_index = report_management_opts.index("Govt") if "Govt" in report_management_opts else 0
-        report_management_type = st.selectbox("Filter by School Management", report_management_opts, index=report_management_index, key="us_report_management_type")
-        report_districts = st.multiselect("Filter by District", _districts(report_state), key="us_report_districts")
-        report_levels = st.multiselect("Filter by School Category", _school_levels(report_state), key="us_report_levels")
-        report_filters = {
-            "state": report_state,
-            "delivery_model": report_delivery_model,
-            "management_type": report_management_type,
-            "districts": report_districts,
-            "school_levels": report_levels,
-        }
-        if dimensions and metrics:
-            report_df = _custom_report(dimensions, metrics, report_filters)
-            _render_dataframe(report_df, use_container_width=True, height=520, hide_index=True)
-            _export_buttons(report_df, "us_custom_report_2024_2025", csv_label="📥 Download CSV", excel_label="📊 Download Excel")
-        else:
-            st.info("Select at least one dimension and one metric to generate a custom report.")
+        report_management_type = st.selectbox("Filter by School Management", report_management_opts, index=report_management_opts.index("Govt") if "Govt" in report_management_opts else 0, key="us_report_management_exact")
+        report_districts = st.multiselect("Filter by District", _districts(report_state), key="us_report_districts_exact")
+        report_levels = st.multiselect("Filter by School Category", _school_levels(report_state), key="us_report_levels_exact")
+        if st.button("📊 Generate Report", type="primary", key="us_report_generate_exact"):
+            if not dimensions or not metrics:
+                st.warning("Please select at least one dimension and one metric")
+            else:
+                report_filters = {
+                    "state": report_state,
+                    "delivery_model": report_delivery_model,
+                    "management_type": report_management_type,
+                    "districts": report_districts,
+                    "school_levels": report_levels,
+                }
+                report_df = _custom_report(dimensions, metrics, report_filters)
+                _render_dataframe(report_df, use_container_width=True, height=520, hide_index=True)
+                _export_buttons(report_df, "us_custom_report_exact", csv_label="📥 Download CSV", excel_label="📊 Download Excel")
 
     _render_footer()
 
-
-
-
-# ===== Build 3 weighted private metrics override =====
 def _weight_expr(alias: str = "ds") -> str:
     return f"CASE WHEN COALESCE({alias}.management_type, 'Govt') = 'Private' THEN COALESCE({alias}.pss_final_weight, 1::numeric) ELSE 1::numeric END"
 
@@ -1771,3 +1768,233 @@ def _county_metric_frame(state_name: str = "All", school_year: str = DASHBOARD_Y
     """
     return _q(sql, params)
 # ===== end Build 4 county_name override =====
+
+# === INDIA_PARITY_OVERRIDE_US ===
+def _us_distinct_from_dim_schools(column: str, state_name: str = 'All', district_name: str = 'All') -> list[str]:
+    if column.lower() not in _table_columns('dim_schools'):
+        return []
+    clauses = ['school_year = %s', f'{column} IS NOT NULL', f"BTRIM({column}) <> ''"]
+    params: list = [DASHBOARD_YEAR]
+    if state_name and state_name != 'All':
+        clauses.append('state_name = %s')
+        params.append(state_name)
+    if district_name and district_name != 'All' and 'district_name' in _table_columns('dim_schools'):
+        clauses.append('district_name = %s')
+        params.append(district_name)
+    df = _q(f"SELECT DISTINCT {column} AS value FROM {SCHEMA}.dim_schools WHERE {' AND '.join(clauses)} ORDER BY value", params)
+    if df.empty or 'value' not in df.columns:
+        return []
+    return [str(v) for v in df['value'].tolist() if v not in (None, '')]
+
+
+def _build_sidebar_filters() -> dict:
+    with st.sidebar:
+        st.markdown('### 🔍 Apply Filters')
+        state_opts = _states()
+        state = st.selectbox('🗺️ Select State/UT', state_opts, index=0, key='us_state_exact') if state_opts else 'All'
+
+        district_opts = ['All'] + _districts(state)
+        district = st.selectbox('🏘️ Select District', district_opts, index=0, key=f'us_district_exact_{state}')
+
+        block_opts = _us_distinct_from_dim_schools('county_name', state, district) or _cities(state, district)
+        block_name = st.selectbox('📍 Select Block/Taluk', ['All'] + block_opts, index=0, key=f'us_block_exact_{state}_{district}')
+
+        city_opts = _cities(state, district)
+        location_value = st.selectbox('🌆 Location', ['All'] + city_opts, index=0, key=f'us_location_exact_{state}_{district}_{block_name}')
+
+        school_type_opts = _school_types(state, district)
+        school_type_new = st.multiselect('📖 School Type', school_type_opts, default=[], key=f'us_school_type_exact_{state}_{district}')
+
+        management_opts = _management_types(state, district)
+        management_default = ['Govt'] if 'Govt' in management_opts else []
+        management_groups = st.multiselect('🏛️ Management Type', management_opts, default=management_default, key=f'us_management_exact_{state}_{district}')
+
+        level_opts = _school_levels(state, district)
+        school_categories = st.multiselect('📚 School Category (Grade Level)', level_opts, default=[], key=f'us_category_exact_{state}_{district}')
+
+        board_opts = _district_types(state)
+        boards = st.multiselect('📚 Board Affiliation', board_opts, default=[], help='Mapped to available US district / board-equivalent type values.', key=f'us_board_exact_{state}')
+
+        active_filters = [state]
+        for val in [district if district != 'All' else None, block_name if block_name != 'All' else None, location_value if location_value != 'All' else None]:
+            if val:
+                active_filters.append(val)
+        active_filters.extend([f'Management: {x}' for x in management_groups])
+        active_filters.extend([f'Category: {x}' for x in school_categories])
+        active_filters.extend([f'School Type: {x}' for x in school_type_new])
+        active_filters.extend([f'Board: {x}' for x in boards])
+        if active_filters:
+            st.markdown('---')
+            st.markdown('### ✅ Active Filters')
+            for item in active_filters:
+                st.markdown(f'- {item}')
+
+        return {
+            'state': state,
+            'district': district,
+            'districts': [district] if district != 'All' else [],
+            'block_name': None if block_name == 'All' else block_name,
+            'location_value': None if location_value == 'All' else location_value,
+            'cities': [location_value] if location_value != 'All' else [],
+            'delivery_model': 'All',
+            'management_type': management_groups[0] if len(management_groups) == 1 else 'All',
+            'management_groups': management_groups,
+            'school_levels': school_categories,
+            'school_categories': school_categories,
+            'school_types': school_type_new,
+            'school_type_new': school_type_new,
+            'district_types': boards,
+            'boards': boards,
+        }
+
+
+def _base_where(filters: dict | None = None, alias: str = 'ds'):
+    filters = filters or {}
+    clauses = [f'{alias}.school_year = %s']
+    params: list = [DASHBOARD_YEAR]
+    if filters.get('state') and filters['state'] != 'All':
+        clauses.append(f'{alias}.state_name = %s')
+        params.append(filters['state'])
+    districts = [x for x in (filters.get('districts') or []) if x]
+    if districts:
+        clauses.append(f'{alias}.district_name = ANY(%s)')
+        params.append(districts)
+    block_name = filters.get('block_name')
+    ds_cols = _table_columns('dim_schools')
+    if block_name:
+        if 'county_name' in ds_cols:
+            clauses.append(f"COALESCE(NULLIF(BTRIM({alias}.county_name), ''), 'Unknown') = %s")
+            params.append(block_name)
+        elif 'city' in ds_cols:
+            clauses.append(f"COALESCE(NULLIF(BTRIM({alias}.city), ''), 'Unknown') = %s")
+            params.append(block_name)
+    location_value = filters.get('location_value')
+    cities = [location_value] if location_value else [x for x in (filters.get('cities') or []) if x]
+    if cities and 'city' in ds_cols:
+        clauses.append(f'{alias}.city = ANY(%s)')
+        params.append(cities)
+    delivery_model = filters.get('delivery_model')
+    if delivery_model and delivery_model != 'All' and 'delivery_model' in ds_cols:
+        clauses.append(f"COALESCE({alias}.delivery_model, 'Unknown') = %s")
+        params.append(delivery_model)
+    management_groups = [x for x in (filters.get('management_groups') or []) if x]
+    if management_groups and 'management_type' in ds_cols:
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = ANY(%s)")
+        params.append(management_groups)
+    elif filters.get('management_type') and filters['management_type'] != 'All' and 'management_type' in ds_cols:
+        clauses.append(f"COALESCE({alias}.management_type, 'Govt') = %s")
+        params.append(filters['management_type'])
+    levels = [x for x in (filters.get('school_categories') or filters.get('school_levels') or []) if x]
+    if levels and 'school_level' in ds_cols:
+        clauses.append(f'{alias}.school_level = ANY(%s)')
+        params.append(levels)
+    school_types = [x for x in (filters.get('school_type_new') or filters.get('school_types') or []) if x]
+    if school_types and 'sch_type_text' in ds_cols:
+        clauses.append(f"COALESCE({alias}.sch_type_text, 'Unknown') = ANY(%s)")
+        params.append(school_types)
+    district_types = [x for x in (filters.get('boards') or filters.get('district_types') or []) if x]
+    if district_types:
+        clauses.append(f"EXISTS (SELECT 1 FROM {SCHEMA}.dim_districts dd WHERE dd.school_year = {alias}.school_year AND dd.district_id = {alias}.district_id AND COALESCE(dd.lea_type_text, 'Unknown') = ANY(%s))")
+        params.append(district_types)
+    return ' WHERE ' + ' AND '.join(clauses), params
+
+
+def render_us_state_dashboard():
+    _inject_css()
+    if not _phase1_ready():
+        _render_missing_data_notice()
+        return
+
+    filters = _build_sidebar_filters()
+    selected_state = filters.get('state') or 'United States'
+    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
+    if filters.get('management_groups') and 'Private' in filters.get('management_groups', []):
+        st.info('School Management uses NCES CCD 2024–2025 universe counts for Govt/Public schools and NCES PSS 2021–2022 weighted estimates for Private schools. Grade-level enrollment detail remains public-only for now.')
+
+    k = _state_dashboard_kpis(filters)
+    st.markdown(f'<div class="section-header">📊 Overview: {selected_state}</div>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric('🏫 Total Schools', _fmt_int(k.get('total_schools')))
+    with col2:
+        st.metric('🎓 Schools with Enrollment', _fmt_int(k.get('schools_with_enrollment')))
+    with col3:
+        st.metric('🗺️ Districts', _fmt_int(k.get('total_districts')))
+    with col4:
+        st.metric('📊 State PTR', _fmt_ptr(k.get('ptr')))
+    col5, col6 = st.columns(2)
+    with col5:
+        st.metric('👥 Total Students', _fmt_int(k.get('total_students')))
+    with col6:
+        st.metric('👨‍🏫 Total Teachers', _fmt_int(k.get('total_teachers')))
+
+    st.markdown('<div class="section-header">📚 Grade-Level Enrollment (Boys vs Girls)</div>', unsafe_allow_html=True)
+    enrollment_df = _grade_enrollment(filters)
+    grade_gender_df = _grade_gender_enrollment(filters)
+    chart_left, chart_right = st.columns(2)
+    with chart_left:
+        if not grade_gender_df.empty:
+            grade_order = ['PK', 'KG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'UG', 'AE']
+            display_map = {'PK': 'Pre-K', 'KG': 'KG', 'UG': 'Ungraded', 'AE': 'Adult Ed'}
+            chart_df = grade_gender_df.copy()
+            chart_df['grade_display'] = chart_df['grade'].map(lambda g: display_map.get(g, str(g)))
+            ordered_display = [display_map.get(g, g) for g in grade_order if g in chart_df['grade'].astype(str).unique()]
+            fig = px.bar(chart_df, x='grade_display', y='student_count', color='gender', barmode='group', title='Grade-Level Enrollment (Boys vs Girls)', category_orders={'grade_display': ordered_display, 'gender': ['Boys', 'Girls']}, color_discrete_map={'Boys': '#3498db', 'Girls': '#e74c3c'}, labels={'grade_display': 'Grade', 'student_count': 'Students', 'gender': 'Gender'})
+            fig.update_layout(paper_bgcolor='white', plot_bgcolor='white', margin=dict(l=10, r=10, t=55, b=10), font=dict(family='Segoe UI'), legend_title_text='')
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        else:
+            _plot_bar(enrollment_df, 'grade', 'total_students', 'Grade-wise Enrollment')
+    with chart_right:
+        city_mix_df = _schools_by_city(filters)
+        _plot_bar(city_mix_df, 'city', 'school_count', 'Top Locations by School Count', orientation='h')
+    if not enrollment_df.empty:
+        export_enrollment_df = enrollment_df.rename(columns={'grade': 'Grade', 'total_students': 'Total Students'})
+        _render_dataframe(export_enrollment_df, use_container_width=True, hide_index=True)
+        _export_buttons(export_enrollment_df, 'us_grade_enrollment_2024_2025', csv_label='📥 Download CSV', excel_label='📊 Download Excel')
+
+    st.markdown('<div class="section-header">📍 District-Level PTR Analysis</div>', unsafe_allow_html=True)
+    district_df = _district_kpi_table(filters, 100)
+    if not district_df.empty:
+        district_chart = district_df.copy()
+        if 'ptr' in district_chart.columns:
+            district_chart = district_chart[district_chart['ptr'].notna()].copy()
+        if not district_chart.empty:
+            district_chart['ptr_formatted'] = district_chart['ptr'].apply(_fmt_ptr)
+            fig_district = px.bar(district_chart.head(20), x='district_name', y='ptr', title='District PTR Comparison (Top 20 by School Count)', labels={'district_name': 'District', 'ptr': 'PTR'}, color='ptr', color_continuous_scale='RdYlGn_r', custom_data=['ptr_formatted'])
+            fig_district.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
+            fig_district.update_layout(xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120))
+            st.plotly_chart(fig_district, use_container_width=True, config={'displayModeBar': False})
+        display_district_df = district_df[[c for c in ['district_name', 'total_schools', 'total_students', 'total_teachers', 'ptr'] if c in district_df.columns]].copy()
+        display_district_df.columns = ['District', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
+        display_district_df['PTR'] = display_district_df['PTR'].apply(_fmt_ptr)
+        _render_dataframe(display_district_df, use_container_width=True, hide_index=True)
+        _export_buttons(display_district_df, 'us_district_kpis_2024_2025', csv_label='📥 Download District Data (CSV)', excel_label='📊 Download Excel')
+    else:
+        st.info('No district-level data available for the selected filters.')
+
+    if filters.get('district') and filters.get('district') != 'All':
+        st.markdown(f'<div class="section-header">🏘️ Block/Taluk-Level PTR Analysis: {filters.get("district")}</div>', unsafe_allow_html=True)
+        city_df = _city_kpi_table(filters, 100)
+        if not city_df.empty:
+            city_chart = city_df.copy()
+            city_chart = city_chart[city_chart['ptr'].notna()].copy() if 'ptr' in city_chart.columns else city_chart
+            if not city_chart.empty:
+                city_chart['ptr_formatted'] = city_chart['ptr'].apply(_fmt_ptr)
+                fig_city = px.bar(city_chart.head(20), x='city', y='ptr', title=f'Block/Taluk PTR Comparison in {filters.get("district")} (Top 20)', labels={'city': 'Block/Taluk', 'ptr': 'PTR'}, color='ptr', color_continuous_scale='RdYlGn_r', custom_data=['ptr_formatted'])
+                fig_city.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
+                fig_city.update_layout(xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120))
+                st.plotly_chart(fig_city, use_container_width=True, config={'displayModeBar': False})
+            display_city_df = city_df[[c for c in ['city', 'total_schools', 'total_students', 'total_teachers', 'ptr'] if c in city_df.columns]].copy()
+            display_city_df.columns = ['Block/Taluk', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
+            display_city_df['PTR'] = display_city_df['PTR'].apply(_fmt_ptr)
+            _render_dataframe(display_city_df, use_container_width=True, hide_index=True)
+            _export_buttons(display_city_df, 'us_city_kpis_2024_2025', csv_label='📥 Download Block/Taluk Data (CSV)', excel_label='📊 Download Excel')
+        else:
+            st.info('No block-level data available for the selected district.')
+
+    st.markdown('<div class="section-header">🏫 School Directory</div>', unsafe_allow_html=True)
+    directory_df = _directory_table(filters, 1000)
+    _render_dataframe(directory_df, use_container_width=True, height=520, hide_index=True)
+    _export_buttons(directory_df, 'us_directory_extract_2024_2025', csv_label='📥 Download CSV', excel_label='📊 Download Excel')
+    _render_footer()
