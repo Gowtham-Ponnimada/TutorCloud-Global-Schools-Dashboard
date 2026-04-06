@@ -1551,7 +1551,7 @@ def render_uae_analytics():
     st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
 
-    filters = _build_sidebar_filters()
+    filters = {}
     tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
     with tabs[0]:
         _uae_analytics_geo(filters)

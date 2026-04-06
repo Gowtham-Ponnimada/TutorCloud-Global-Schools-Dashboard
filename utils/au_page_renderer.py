@@ -678,7 +678,7 @@ def render_au_analytics() -> None:
         st.warning("No Australia analytics data is available.")
         return
 
-    filters = _analytics_sidebar_filters(base_states_df)
+    filters = {"state_name": None, "district_name": None}
     school_filters = {
         "state_name": filters.get("state_name"),
         "district_name": filters.get("district_name"),
