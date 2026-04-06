@@ -2113,13 +2113,13 @@ def _build_sidebar_filters() -> dict:
         cycle_col = _pick_col(pf_cols, 'cycle', 'education_cycle', 'grade_level')
 
         emirates = _distinct('uae_fact_enrollment', emirate_col) if emirate_col else []
-        state_value = st.sidebar.selectbox('🗺️ Select State/UT', emirates, key='uae_state_exact') if emirates else None
+        state_value = st.sidebar.selectbox('🗺️ Select Emirate', emirates, key='uae_state_exact') if emirates else None
         curriculum_options = ['All'] + (_distinct('uae_fact_schools', curriculum_col) if curriculum_col else [])
-        district_value = st.sidebar.selectbox('🏘️ Select District', curriculum_options, index=0, key='uae_district_exact') if curriculum_options else 'All'
+        district_value = st.sidebar.selectbox('🏘️ Select Curriculum', curriculum_options, index=0, key='uae_district_exact') if curriculum_options else 'All'
         education_options = ['All'] + (_distinct('uae_fact_enrollment', edu_type_col) if edu_type_col else [])
-        block_value = st.sidebar.selectbox('📍 Select Block/Taluk', education_options, index=0, key='uae_block_exact') if education_options else 'All'
+        block_value = st.sidebar.selectbox('📍 Select Education Type', education_options, index=0, key='uae_block_exact') if education_options else 'All'
         gender_options = ['All'] + (_distinct('uae_fact_enrollment', gender_col) if gender_col else [])
-        location_value = st.sidebar.selectbox('🌆 Location', gender_options, index=0, key='uae_location_exact') if gender_options else 'All'
+        location_value = st.sidebar.selectbox('👥 Gender', gender_options, index=0, key='uae_location_exact') if gender_options else 'All'
 
         filters = {}
         if emirate_col and state_value:
@@ -2130,17 +2130,7 @@ def _build_sidebar_filters() -> dict:
             filters['block'] = {'col': edu_type_col, 'val': block_value}
         if gender_col and location_value:
             filters['location'] = {'col': gender_col, 'val': location_value, 'apply_to': ['uae_fact_enrollment', 'uae_fact_student_scores', 'uae_fact_pass_fail']}
-
-        school_type_filter = _uae_exact_multiselect('📖 School Type', _distinct('uae_fact_enrollment', edu_type_col) if edu_type_col else [], 'uae_school_type_exact', 'Mapped to available UAE education-type values.', ['uae_fact_enrollment', 'uae_fact_schools', 'uae_fact_teachers_emirate', 'uae_fact_pass_fail'], edu_type_col)
-        if school_type_filter:
-            filters['school_type_new'] = school_type_filter
-        management_filter = _uae_exact_multiselect('🏛️ Management Type', _distinct('uae_fact_schools', curriculum_col) if curriculum_col else [], 'uae_management_exact', 'Mapped to available UAE curriculum / management values.', ['uae_fact_schools'], curriculum_col)
-        if management_filter:
-            filters['management_groups'] = management_filter
-        category_filter = _uae_exact_multiselect('📚 School Category (Grade Level)', _distinct('uae_fact_pass_fail', cycle_col) if cycle_col else [], 'uae_category_exact', 'Mapped to available UAE education-cycle values.', ['uae_fact_pass_fail'], cycle_col)
-        if category_filter:
-            filters['school_categories'] = category_filter
-        board_filter = _uae_exact_multiselect('📚 Board Affiliation', _distinct('uae_fact_enrollment', nat_col) if nat_col else [], 'uae_board_exact', 'Mapped to available UAE nationality / board-equivalent values.', ['uae_fact_enrollment', 'uae_fact_student_nationalities'], nat_col)
+        board_filter = _uae_exact_multiselect('🌐 Nationality Category', _distinct('uae_fact_enrollment', nat_col) if nat_col else [], 'uae_board_exact', 'Uses available UAE nationality-category values.', ['uae_fact_enrollment', 'uae_fact_student_nationalities'], nat_col)
         if board_filter:
             filters['boards'] = board_filter
 

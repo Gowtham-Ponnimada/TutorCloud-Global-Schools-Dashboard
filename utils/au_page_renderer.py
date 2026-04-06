@@ -269,7 +269,7 @@ def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
     default_state = st.session_state.get("au_selected_state", state_options[0] if state_options else None)
     if default_state not in state_options and state_options:
         default_state = state_options[0]
-    state = st.sidebar.selectbox("🗺️ Select State/UT", state_options, index=state_options.index(default_state) if default_state in state_options else 0, key="au_state_filter") if state_options else None
+    state = st.sidebar.selectbox("🗺️ Select State/Territory", state_options, index=state_options.index(default_state) if default_state in state_options else 0, key="au_state_filter") if state_options else None
     st.session_state["au_selected_state"] = state
     try:
         if state:
@@ -711,6 +711,10 @@ def render_au_analytics() -> None:
 
         if level == "State":
             df_map = base_states_df.copy()
+            if not df_map.empty:
+                df_map = df_map.rename(columns={"schools": "total_schools", "fte_teaching_staff": "total_teachers", "student_teacher_ratio": "ptr"})
+                if "students_per_school" not in df_map.columns and "total_students" in df_map.columns and "total_schools" in df_map.columns:
+                    df_map["students_per_school"] = df_map.apply(lambda r: round(_num(r.get("total_students")) / _num(r.get("total_schools")), 2) if _num(r.get("total_schools")) > 0 else None, axis=1)
             location_col = "state_name"
         else:
             states = base_states_df["state_name"].dropna().tolist() if "state_name" in base_states_df.columns else []
@@ -929,7 +933,7 @@ def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
     if not state_options:
         return {}
 
-    state = st.sidebar.selectbox('🗺️ Select State/UT', state_options, key='au_state_filter_exact')
+    state = st.sidebar.selectbox('🗺️ Select State/Territory', state_options, key='au_state_filter_exact')
     district_options = ['All'] + _au_unique_values(_safe_district_df(state), 'district_name')
     district = st.sidebar.selectbox('🏘️ Select District', district_options, index=0, key=f'au_district_filter_exact_{state}')
 
@@ -945,20 +949,19 @@ def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
     )
 
     block_options = ['All'] + _au_unique_values(scope_df, 'suburb')
-    block_name = st.sidebar.selectbox('📍 Select Block/Taluk', block_options, index=0, key=f'au_block_filter_exact_{state}_{district}')
+    block_name = st.sidebar.selectbox('🏘️ Select Suburb', block_options, index=0, key=f'au_block_filter_exact_{state}_{district}')
 
     location_options = ['All'] + _au_unique_values(scope_df, 'postcode')
-    location_value = st.sidebar.selectbox('🌆 Location', location_options, index=0, key=f'au_location_filter_exact_{state}_{district}_{block_name}')
+    location_value = 'All'
 
     school_type_options = _au_unique_values(scope_df, 'school_level')
     management_options = _au_unique_values(scope_df, 'management_type')
-    category_options = _au_unique_values(scope_df, 'school_level')
     board_options = _au_unique_values(scope_df, 'delivery_model')
 
-    school_type_new = st.sidebar.multiselect('📖 School Type', school_type_options, default=[], help='Australia source has no direct boys/girls/co-ed split; using available school-level values.', key=f'au_school_type_exact_{state}')
+    school_type_new = st.sidebar.multiselect('📖 School Level', school_type_options, default=[], help='Uses available Australia school-level values.', key=f'au_school_type_exact_{state}')
+    school_categories = school_type_new
     management_groups = st.sidebar.multiselect('🏛️ Management Type', management_options, default=[], key=f'au_management_exact_{state}')
-    school_categories = st.sidebar.multiselect('📚 School Category (Grade Level)', category_options, default=[], key=f'au_category_exact_{state}')
-    boards = st.sidebar.multiselect('📚 Board Affiliation', board_options, default=[], help='Will populate when board-equivalent source fields are available.', key=f'au_board_exact_{state}')
+    boards = []
 
     active_filters = []
     for val in [state, None if district == 'All' else district, None if block_name == 'All' else block_name, None if location_value == 'All' else location_value]:
@@ -981,7 +984,6 @@ def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
         'location_value': None if location_value == 'All' else location_value,
         'school_type_new': school_type_new,
         'management_groups': management_groups,
-        'school_categories': school_categories,
         'school_levels': school_categories,
         'boards': boards,
         'search': None,

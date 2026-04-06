@@ -295,6 +295,26 @@ def _school_types(state_name: str = "All", district_name: str = "All") -> list[s
     return _distinct_values(sql, params, "sch_type_text")
 
 
+def _us_school_level_label(value):
+    value = "" if value is None else str(value).strip()
+    return {"1": "Elementary", "2": "Secondary", "3": "Combined"}.get(value, value or "Unknown")
+
+
+def _us_school_type_label(value):
+    value = "" if value is None else str(value).strip()
+    return {
+        "1": "Regular Elementary or Secondary",
+        "2": "Montessori",
+        "3": "Special Program Emphasis",
+        "4": "Special Education",
+        "5": "Vocational/Technical",
+        "6": "Alternative",
+        "7": "Early Childhood Program/Day Care Center",
+        "8": "Other / Unspecified (8)",
+        "9": "Other / Unspecified (9)",
+    }.get(value, value or "Unknown")
+
+
 
 def _delivery_models(state_name: str = "All", district_name: str = "All") -> list[str]:
     clauses = ["school_year = %s", "delivery_model IS NOT NULL", "BTRIM(delivery_model) <> ''"]
@@ -1791,29 +1811,29 @@ def _build_sidebar_filters() -> dict:
     with st.sidebar:
         st.markdown('### 🔍 Apply Filters')
         state_opts = _states()
-        state = st.selectbox('🗺️ Select State/UT', state_opts, index=0, key='us_state_exact') if state_opts else 'All'
+        state = st.selectbox('🗺️ Select State', state_opts, index=0, key='us_state_exact') if state_opts else 'All'
 
         district_opts = ['All'] + _districts(state)
         district = st.selectbox('🏘️ Select District', district_opts, index=0, key=f'us_district_exact_{state}')
 
         block_opts = _us_distinct_from_dim_schools('county_name', state, district) or _cities(state, district)
-        block_name = st.selectbox('📍 Select Block/Taluk', ['All'] + block_opts, index=0, key=f'us_block_exact_{state}_{district}')
+        block_name = st.selectbox('📍 Select County', ['All'] + block_opts, index=0, key=f'us_block_exact_{state}_{district}')
 
         city_opts = _cities(state, district)
-        location_value = st.selectbox('🌆 Location', ['All'] + city_opts, index=0, key=f'us_location_exact_{state}_{district}_{block_name}')
+        location_value = st.selectbox('🌆 City', ['All'] + city_opts, index=0, key=f'us_location_exact_{state}_{district}_{block_name}')
 
         school_type_opts = _school_types(state, district)
-        school_type_new = st.multiselect('📖 School Type', school_type_opts, default=[], key=f'us_school_type_exact_{state}_{district}')
+        school_type_new = st.multiselect('📖 School Type', school_type_opts, default=[], format_func=_us_school_type_label, key=f'us_school_type_exact_{state}_{district}')
 
         management_opts = _management_types(state, district)
         management_default = ['Govt'] if 'Govt' in management_opts else []
         management_groups = st.multiselect('🏛️ Management Type', management_opts, default=management_default, key=f'us_management_exact_{state}_{district}')
 
         level_opts = _school_levels(state, district)
-        school_categories = st.multiselect('📚 School Category (Grade Level)', level_opts, default=[], key=f'us_category_exact_{state}_{district}')
+        school_categories = st.multiselect('📚 School Level', level_opts, default=[], format_func=_us_school_level_label, key=f'us_category_exact_{state}_{district}')
 
         board_opts = _district_types(state)
-        boards = st.multiselect('📚 Board Affiliation', board_opts, default=[], help='Mapped to available US district / board-equivalent type values.', key=f'us_board_exact_{state}')
+        boards = st.multiselect('🏛️ District Type', board_opts, default=[], help='Uses available US district-type values.', key=f'us_board_exact_{state}')
 
         active_filters = [state]
         for val in [district if district != 'All' else None, block_name if block_name != 'All' else None, location_value if location_value != 'All' else None]:
@@ -1821,7 +1841,7 @@ def _build_sidebar_filters() -> dict:
                 active_filters.append(val)
         active_filters.extend([f'Management: {x}' for x in management_groups])
         active_filters.extend([f'Category: {x}' for x in school_categories])
-        active_filters.extend([f'School Type: {x}' for x in school_type_new])
+        active_filters.extend([f'School Type: {_us_school_type_label(x)}' for x in school_type_new])
         active_filters.extend([f'Board: {x}' for x in boards])
         if active_filters:
             st.markdown('---')
