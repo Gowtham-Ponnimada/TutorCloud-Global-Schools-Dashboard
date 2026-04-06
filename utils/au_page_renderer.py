@@ -959,7 +959,6 @@ def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
     board_options = _au_unique_values(scope_df, 'delivery_model')
 
     school_type_new = st.sidebar.multiselect('📖 School Level', school_type_options, default=[], help='Uses available Australia school-level values.', key=f'au_school_type_exact_{state}')
-    school_categories = school_type_new
     management_groups = st.sidebar.multiselect('🏛️ Management Type', management_options, default=[], key=f'au_management_exact_{state}')
     boards = []
 
@@ -968,9 +967,7 @@ def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
         if val:
             active_filters.append(val)
     active_filters.extend([f'Management: {x}' for x in management_groups])
-    active_filters.extend([f'Category: {x}' for x in school_categories])
-    active_filters.extend([f'School Type: {x}' for x in school_type_new])
-    active_filters.extend([f'Board: {x}' for x in boards])
+    active_filters.extend([f'School Level: {x}' for x in school_type_new])
     if active_filters:
         st.sidebar.markdown('---')
         st.sidebar.markdown('### ✅ Active Filters')
@@ -984,7 +981,7 @@ def _state_sidebar_filters(states_df: pd.DataFrame) -> Dict[str, Any]:
         'location_value': None if location_value == 'All' else location_value,
         'school_type_new': school_type_new,
         'management_groups': management_groups,
-        'school_levels': school_categories,
+        'school_levels': school_type_new,
         'boards': boards,
         'search': None,
         'limit': 50000,
@@ -1002,8 +999,6 @@ def _au_apply_exact_filters(df: pd.DataFrame, filters: Dict[str, Any]) -> pd.Dat
         out = out[out['postcode'].astype(str).str.upper() == str(filters['location_value']).upper()]
     if filters.get('management_groups') and 'management_type' in out.columns:
         out = out[out['management_type'].isin(filters['management_groups'])]
-    if filters.get('school_categories') and 'school_level' in out.columns:
-        out = out[out['school_level'].isin(filters['school_categories'])]
     if filters.get('school_type_new') and 'school_level' in out.columns:
         out = out[out['school_level'].isin(filters['school_type_new'])]
     if filters.get('boards') and 'delivery_model' in out.columns and out['delivery_model'].notna().any():
