@@ -943,6 +943,14 @@ def _uae_school_directory_summary(filters: dict) -> pd.DataFrame:
     return df
 
 
+def _render_footer():
+    st.markdown("""
+        <div style='text-align: center; padding: 20px; margin-top: 40px; border-top: 1px solid #e0e0e0;'>
+        <p style='margin: 0; color: #666; font-size: 0.95rem;'>TutorCloud Global Dashboard</p>
+        <p style='margin: 5px 0 0 0; color: #666; font-size: 0.95rem;'>© 2026 TutorCloud. All rights reserved.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
 def render_uae_state_dashboard():
     _inject_css()
 
@@ -1902,8 +1910,7 @@ def render_uae_analytics():
                     except Exception:
                         pass
 
-    st.markdown('---')
-    st.markdown("<div style='text-align:center;color:#757575;font-size:.85rem;'><strong>TutorCloud Global Dashboard</strong><br>© 2026 TutorCloud. All rights reserved.</div>", unsafe_allow_html=True)
+    _render_footer()
 def _uae_analytics_geo(filters):
     st.markdown('<div class="uae-section-header">🗺️ Geographic Distribution</div>', unsafe_allow_html=True)
 
