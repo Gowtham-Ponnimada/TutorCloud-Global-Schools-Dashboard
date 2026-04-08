@@ -509,7 +509,19 @@ def render_nz_state_dashboard() -> None:
 def _load_nz_analytics_school_frame() -> pd.DataFrame:
     """Step 1 analytics loader: reuse NZ state school frame and ensure geo fields."""
     try:
-        df = _load_nz_state_school_frame().copy()
+        state_bundle = _load_nz_state_school_frame()
+        if isinstance(state_bundle, dict):
+            if not state_bundle.get("ok", False):
+                return pd.DataFrame()
+            df = state_bundle.get("df", pd.DataFrame())
+            if df is None:
+                df = pd.DataFrame()
+            else:
+                df = df.copy()
+        elif isinstance(state_bundle, pd.DataFrame):
+            df = state_bundle.copy()
+        else:
+            df = pd.DataFrame()
     except Exception:
         df = pd.DataFrame()
 
