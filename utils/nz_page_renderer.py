@@ -759,7 +759,226 @@ def render_nz_analytics() -> None:
         )
 
     with tabs[1]:
-        st.info("Step 2 next: NZ Performance Metrics tab will be implemented here.")
+        st.markdown("### Performance Metrics")
+
+        pf1, pf2, pf3, pf4, pf5 = st.columns(5)
+
+        perf_region_options = ["All"] + sorted(
+            [x for x in df.get("regional_council", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        perf_region = pf1.selectbox(
+            "Regional Council",
+            perf_region_options,
+            index=0,
+            key="nz_analytics_perf_region",
+        )
+
+        perf_ta_base = df.copy()
+        if perf_region != "All" and "regional_council" in perf_ta_base.columns:
+            perf_ta_base = perf_ta_base[perf_ta_base["regional_council"] == perf_region]
+
+        perf_ta_options = ["All"] + sorted(
+            [x for x in perf_ta_base.get("territorial_authority", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        perf_ta = pf2.selectbox(
+            "Territorial Authority",
+            perf_ta_options,
+            index=0,
+            key="nz_analytics_perf_ta",
+        )
+
+        perf_type_options = ["All"] + sorted(
+            [x for x in df.get("school_type", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        perf_type = pf3.selectbox(
+            "School Type",
+            perf_type_options,
+            index=0,
+            key="nz_analytics_perf_type",
+        )
+
+        perf_authority_options = ["All"] + sorted(
+            [x for x in df.get("authority", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        perf_authority = pf4.selectbox(
+            "Authority",
+            perf_authority_options,
+            index=0,
+            key="nz_analytics_perf_authority",
+        )
+
+        perf_gender_options = ["All"] + sorted(
+            [x for x in df.get("gender", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        perf_gender = pf5.selectbox(
+            "Gender",
+            perf_gender_options,
+            index=0,
+            key="nz_analytics_perf_gender",
+        )
+
+        perf_df = df.copy()
+        if perf_region != "All" and "regional_council" in perf_df.columns:
+            perf_df = perf_df[perf_df["regional_council"] == perf_region]
+        if perf_ta != "All" and "territorial_authority" in perf_df.columns:
+            perf_df = perf_df[perf_df["territorial_authority"] == perf_ta]
+        if perf_type != "All" and "school_type" in perf_df.columns:
+            perf_df = perf_df[perf_df["school_type"] == perf_type]
+        if perf_authority != "All" and "authority" in perf_df.columns:
+            perf_df = perf_df[perf_df["authority"] == perf_authority]
+        if perf_gender != "All" and "gender" in perf_df.columns:
+            perf_df = perf_df[perf_df["gender"] == perf_gender]
+
+        total_schools = int(perf_df["school_id"].nunique()) if "school_id" in perf_df.columns else len(perf_df)
+        total_students = float(perf_df["total_students"].fillna(0).sum()) if "total_students" in perf_df.columns else 0
+        total_ftte = float(perf_df["teacher_ftte"].fillna(0).sum()) if "teacher_ftte" in perf_df.columns else 0
+        total_hc = float(perf_df["teacher_headcount"].fillna(0).sum()) if "teacher_headcount" in perf_df.columns else 0
+        ptr_ftte = (total_students / total_ftte) if total_ftte > 0 else None
+        students_per_school = (total_students / total_schools) if total_schools > 0 else None
+
+        k1, k2, k3 = st.columns(3)
+        k4, k5, k6 = st.columns(3)
+
+        k1.metric("SCHOOLS", _fmt_int(total_schools))
+        k2.metric("STUDENTS", _fmt_int(total_students))
+        k3.metric("TEACHER FTTE", _fmt_float(total_ftte, 2))
+        k4.metric("PTR (FTTE)", _fmt_float(ptr_ftte, 2) if ptr_ftte is not None else "N/A")
+        k5.metric("STUDENTS / SCHOOL", _fmt_float(students_per_school, 1) if students_per_school is not None else "N/A")
+        k6.metric("TEACHER HEADCOUNT", _fmt_int(total_hc))
+
+        c1, c2 = st.columns(2)
+
+        if not perf_df.empty and {"school_type", "total_students"}.issubset(perf_df.columns):
+            school_type_summary = (
+                perf_df.groupby("school_type", dropna=False, as_index=False)
+                .agg(
+                    total_students=("total_students", "sum"),
+                    schools=("school_id", "nunique") if "school_id" in perf_df.columns else ("school_type", "size")
+                )
+                .sort_values("total_students", ascending=False)
+            )
+            fig_type = px.bar(
+                school_type_summary,
+                x="school_type",
+                y="total_students",
+                color="schools",
+                title="Students by School Type",
+                labels={"school_type": "School Type", "total_students": "Students", "schools": "Schools"},
+            )
+            fig_type.update_layout(height=420)
+            c1.plotly_chart(fig_type, use_container_width=True)
+        else:
+            c1.info("No school-type student distribution is available for the current selection.")
+
+        if not perf_df.empty and {"regional_council", "total_students"}.issubset(perf_df.columns):
+            region_summary = (
+                perf_df.groupby("regional_council", dropna=False, as_index=False)
+                .agg(
+                    total_students=("total_students", "sum"),
+                    teacher_ftte=("teacher_ftte", "sum") if "teacher_ftte" in perf_df.columns else ("total_students", "sum")
+                )
+                .sort_values("total_students", ascending=False)
+                .head(15)
+            )
+            fig_region = px.bar(
+                region_summary,
+                x="regional_council",
+                y="total_students",
+                color="teacher_ftte" if "teacher_ftte" in region_summary.columns else None,
+                title="Students by Regional Council",
+                labels={"regional_council": "Regional Council", "total_students": "Students", "teacher_ftte": "Teacher FTTE"},
+            )
+            fig_region.update_layout(height=420)
+            c2.plotly_chart(fig_region, use_container_width=True)
+        else:
+            c2.info("No regional student distribution is available for the current selection.")
+
+        c3, c4 = st.columns(2)
+
+        if not perf_df.empty and {"regional_council", "total_students", "teacher_ftte"}.issubset(perf_df.columns):
+            ptr_region = (
+                perf_df.groupby("regional_council", dropna=False, as_index=False)
+                .agg(
+                    total_students=("total_students", "sum"),
+                    teacher_ftte=("teacher_ftte", "sum"),
+                )
+            )
+            ptr_region = ptr_region[ptr_region["teacher_ftte"].fillna(0) > 0].copy()
+            if not ptr_region.empty:
+                ptr_region["ptr_ftte"] = ptr_region["total_students"] / ptr_region["teacher_ftte"]
+                ptr_region = ptr_region.sort_values("ptr_ftte", ascending=False).head(15)
+                fig_ptr = px.bar(
+                    ptr_region,
+                    x="regional_council",
+                    y="ptr_ftte",
+                    color="teacher_ftte",
+                    title="PTR (FTTE) by Regional Council",
+                    labels={"regional_council": "Regional Council", "ptr_ftte": "PTR (FTTE)", "teacher_ftte": "Teacher FTTE"},
+                )
+                fig_ptr.update_layout(height=420)
+                c3.plotly_chart(fig_ptr, use_container_width=True)
+            else:
+                c3.info("No PTR (FTTE) values are available for the current regional selection.")
+        else:
+            c3.info("No PTR (FTTE) regional summary is available for the current selection.")
+
+        if not perf_df.empty and {"authority", "teacher_ftte"}.issubset(perf_df.columns):
+            authority_summary = (
+                perf_df.groupby("authority", dropna=False, as_index=False)
+                .agg(
+                    teacher_ftte=("teacher_ftte", "sum"),
+                    total_students=("total_students", "sum") if "total_students" in perf_df.columns else ("teacher_ftte", "sum")
+                )
+                .sort_values("teacher_ftte", ascending=False)
+            )
+            fig_auth = px.bar(
+                authority_summary,
+                x="authority",
+                y="teacher_ftte",
+                color="total_students",
+                title="Teacher FTTE by Authority",
+                labels={"authority": "Authority", "teacher_ftte": "Teacher FTTE", "total_students": "Students"},
+            )
+            fig_auth.update_layout(height=420)
+            c4.plotly_chart(fig_auth, use_container_width=True)
+        else:
+            c4.info("No authority-level teacher summary is available for the current selection.")
+
+        st.markdown("### Performance Metrics Table")
+
+        perf_table_cols = [
+            c for c in [
+                "school_name",
+                "regional_council",
+                "territorial_authority",
+                "school_type",
+                "authority",
+                "gender",
+                "total_students",
+                "teacher_headcount",
+                "teacher_ftte",
+                "ptr_ftte",
+            ] if c in perf_df.columns
+        ]
+
+        perf_table = perf_df[perf_table_cols].copy() if perf_table_cols else perf_df.copy()
+
+        if "total_students" in perf_table.columns:
+            perf_table = perf_table.sort_values("total_students", ascending=False)
+        if "ptr_ftte" in perf_table.columns:
+            perf_table["ptr_ftte"] = pd.to_numeric(perf_table["ptr_ftte"], errors="coerce").round(2)
+        if "teacher_ftte" in perf_table.columns:
+            perf_table["teacher_ftte"] = pd.to_numeric(perf_table["teacher_ftte"], errors="coerce").round(2)
+
+        st.dataframe(perf_table, use_container_width=True, hide_index=True)
+
+        perf_csv = perf_table.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download NZ analytics performance metrics table (CSV)",
+            data=perf_csv,
+            file_name="nz_analytics_performance_metrics.csv",
+            mime="text/csv",
+        )
 
     with tabs[2]:
         st.info("Step 3 next: NZ Comparative Analysis tab will be implemented here.")
