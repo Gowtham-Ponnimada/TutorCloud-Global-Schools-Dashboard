@@ -855,6 +855,176 @@ def render_nz_state_dashboard() -> None:
     _render_nz_footer()
 
 
+
+@st.cache_data(show_spinner=False)
+def _load_nz_analytics_school_frame():
+    """
+    Build a stable NZ analytics school-level frame.
+    Prefer the cleaned NZ state bundle and enrich geo fields from nz_dim_schools.csv
+    when latitude/longitude are missing or sparse.
+    """
+    import pandas as pd
+
+    state_bundle = _load_nz_state_school_frame()
+
+    if isinstance(state_bundle, dict):
+        df = state_bundle.get("df")
+    else:
+        df = state_bundle
+
+    if df is None:
+        return pd.DataFrame()
+
+    if not isinstance(df, pd.DataFrame):
+        try:
+            df = pd.DataFrame(df)
+        except Exception:
+            return pd.DataFrame()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df = df.copy()
+
+    for col in [
+        "school_name",
+        "regional_council",
+        "territorial_authority",
+        "school_type",
+        "authority",
+        "gender",
+    ]:
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype(str).str.strip()
+
+    for col in [
+        "school_id",
+        "latitude",
+        "longitude",
+        "total_students",
+        "teacher_headcount",
+        "teacher_ftte",
+    ]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    need_geo = (
+        "latitude" not in df.columns or
+        "longitude" not in df.columns or
+        df["latitude"].notna().sum() == 0 or
+        df["longitude"].notna().sum() == 0
+    )
+
+    if need_geo:
+        try:
+            dim_path = NZ_DATA_DIR / "nz_dim_schools.csv"
+            if dim_path.exists():
+                dim = pd.read_csv(dim_path)
+
+                rename_map = {}
+                for c in dim.columns:
+                    lc = str(c).strip().lower()
+                    if lc in ("school_id", "schoolid", "school_no", "school number", "school_number"):
+                        rename_map[c] = "school_id"
+                    elif lc in ("school_name", "name", "school"):
+                        rename_map[c] = "school_name"
+                    elif lc in ("latitude", "lat"):
+                        rename_map[c] = "latitude"
+                    elif lc in ("longitude", "lon", "lng", "long"):
+                        rename_map[c] = "longitude"
+                    elif lc in ("regional_council", "regional council", "region"):
+                        rename_map[c] = "regional_council"
+                    elif lc in ("territorial_authority", "territorial authority", "ta"):
+                        rename_map[c] = "territorial_authority"
+                    elif lc in ("school_type", "type"):
+                        rename_map[c] = "school_type"
+                    elif lc == "authority":
+                        rename_map[c] = "authority"
+                    elif lc == "gender":
+                        rename_map[c] = "gender"
+
+                dim = dim.rename(columns=rename_map)
+
+                keep_cols = [
+                    c for c in [
+                        "school_id",
+                        "school_name",
+                        "latitude",
+                        "longitude",
+                        "regional_council",
+                        "territorial_authority",
+                        "school_type",
+                        "authority",
+                        "gender",
+                    ]
+                    if c in dim.columns
+                ]
+
+                if keep_cols:
+                    dim = dim[keep_cols].copy()
+
+                    if "school_id" in dim.columns:
+                        dim["school_id"] = pd.to_numeric(dim["school_id"], errors="coerce")
+
+                    for c in ["latitude", "longitude"]:
+                        if c in dim.columns:
+                            dim[c] = pd.to_numeric(dim[c], errors="coerce")
+
+                    if "school_id" in df.columns and "school_id" in dim.columns:
+                        geo_cols = [c for c in dim.columns if c != "school_id"]
+                        df = df.merge(dim, on="school_id", how="left", suffixes=("", "_dim"))
+
+                        for c in geo_cols:
+                            dim_col = f"{c}_dim"
+                            if dim_col in df.columns:
+                                if c not in df.columns:
+                                    df[c] = df[dim_col]
+                                else:
+                                    df[c] = df[c].where(
+                                        df[c].notna() & (df[c].astype(str).str.strip() != ""),
+                                        df[dim_col],
+                                    )
+                                df.drop(columns=[dim_col], inplace=True)
+        except Exception:
+            pass
+
+    for col in ["latitude", "longitude", "total_students", "teacher_headcount", "teacher_ftte"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if "teacher_ftte" in df.columns and "total_students" in df.columns:
+        df["ptr_ftte"] = pd.NA
+        valid = (
+            pd.to_numeric(df["teacher_ftte"], errors="coerce").fillna(0) > 0
+        ) & pd.to_numeric(df["total_students"], errors="coerce").notna()
+        df.loc[valid, "ptr_ftte"] = (
+            pd.to_numeric(df.loc[valid, "total_students"], errors="coerce")
+            / pd.to_numeric(df.loc[valid, "teacher_ftte"], errors="coerce")
+        )
+    else:
+        df["ptr_ftte"] = pd.NA
+
+    preferred = [
+        "school_id",
+        "school_name",
+        "regional_council",
+        "territorial_authority",
+        "school_type",
+        "authority",
+        "gender",
+        "latitude",
+        "longitude",
+        "total_students",
+        "teacher_headcount",
+        "teacher_ftte",
+        "ptr_ftte",
+    ]
+    existing = [c for c in preferred if c in df.columns]
+    others = [c for c in df.columns if c not in existing]
+    return df[existing + others]
+
+
+
 def render_nz_analytics() -> None:
     inject_professional_css()
 
