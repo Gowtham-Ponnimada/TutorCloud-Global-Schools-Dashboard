@@ -689,31 +689,7 @@ def render_uae_home():
     # CHART 3: Gender distribution donut
     # ─────────────────────────────────────────────────────────────────────────
     if gender_col and enr_cnt_col:
-        st.markdown("## 👥 Student Gender Distribution")
-        df_g = _q(
-            f"SELECT {gender_col} AS gender, SUM({enr_cnt_col}) AS students "
-            f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{where} "
-            f"GROUP BY {gender_col}",
-            [UAE_YEAR] + params
-        )
-        if not df_g.empty:
-            fig_g = px.pie(
-                df_g, names="gender", values="students",
-                color_discrete_sequence=["#006400", "#C8102E", "#FFD700"],
-                hole=0.45, title="Gender Distribution"
-            )
-            fig_g.update_layout(height=300, margin=dict(t=40, b=20))
-            g1, g2 = st.columns([1, 2])
-            g1.plotly_chart(fig_g, use_container_width=True)
-            g2.dataframe(
-                df_g.rename(columns={"gender": "Gender", "students": "Students"})
-                    .assign(Share=lambda d: (d["Students"] / d["Students"].sum() * 100).round(1).astype(str) + "%"),
-                use_container_width=True
-            )
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # KEY INSIGHTS  (mirrors India's Key Insights section exactly)
-    # ─────────────────────────────────────────────────────────────────────────
     st.markdown("## 💡 Key Insights")
     ins1, ins2, ins3 = st.columns(3)
     with ins1:
@@ -964,68 +940,146 @@ def _uae_school_directory_summary(filters: dict) -> pd.DataFrame:
 
 
 def render_uae_state_dashboard():
-    if _inject_css:
-        _inject_css()
-    st.markdown(UAE_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
+    _inject_css()
+
+    st.markdown("# 📊 State Dashboard")
+    st.markdown("**Regional Education Overview - UAE**")
 
     filters = _build_sidebar_filters()
+
     overview = _uae_overview_metrics(filters)
-
-    k1, k2, k3, k4 = st.columns(4)
-    k5, k6, k7, k8 = st.columns(4)
-    k1.metric("TOTAL SCHOOLS", _fmt(overview['total_schools']))
-    k2.metric("SCHOOLS WITH ENROLLMENT", _fmt(overview['schools_with_enrollment']))
-    k3.metric("TOTAL DISTRICTS", _fmt(overview['total_districts']))
-    k4.metric("TOTAL STUDENTS", _fmt(overview['total_students']))
-    k5.metric("MALE STUDENTS", _fmt(overview['male_students']))
-    k6.metric("FEMALE STUDENTS", _fmt(overview['female_students']))
-    k7.metric("TOTAL TEACHERS", _fmt(overview['total_teachers']))
-    k8.metric("PTR (STATE)", overview['state_ptr'])
-
-    st.markdown("### 📍 District-Level PTR Analysis")
     district_df = _uae_emirate_analysis(filters)
-    if not district_df.empty:
-        display_df = district_df.rename(columns={'emirate': 'District', 'total_schools': 'Total Schools', 'total_students': 'Total Students', 'total_teachers': 'Total Teachers', 'PTR': 'PTR'})
-        st.dataframe(display_df[['District', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']], use_container_width=True, hide_index=True)
-        fig = px.bar(district_df.head(20), x='emirate', y='ptr_ratio', color='ptr_ratio', color_continuous_scale='RdYlGn_r', custom_data=['PTR'])
-        fig.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
-        fig.update_layout(title='District-Level PTR Analysis (Top 20)', xaxis_title='District', yaxis_title='PTR', xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120), plot_bgcolor='white', paper_bgcolor='white')
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        _export_buttons(display_df, 'state_dashboard_district_analysis')
-    else:
-        st.info('No district-level data available for the selected filters.')
-
-    st.markdown("### 📚 Education-Type Enrollment Breakdown")
     edu_df = _uae_education_type_breakdown(filters)
-    if not edu_df.empty:
-        if 'gender' in edu_df.columns:
-            fig = px.bar(edu_df, x='education_type', y='students', color='gender', barmode='group', color_discrete_sequence=['#3498db', '#e74c3c'])
-        else:
-            fig = px.bar(edu_df, x='education_type', y='students', color='students', color_continuous_scale='Viridis')
-        fig.update_layout(title='Education-Type Enrollment', xaxis_title='Education Type', yaxis_title='Students', xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120), plot_bgcolor='white', paper_bgcolor='white')
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        st.dataframe(edu_df.rename(columns={'education_type': 'Education Type', 'gender': 'Gender', 'students': 'Students'}), use_container_width=True, hide_index=True)
-        _export_buttons(edu_df, 'state_dashboard_education_type')
-    else:
-        st.info('No education-type enrollment data is available for current filters.')
 
-    st.markdown("### 🏫 School Directory")
-    directory_df = _uae_school_directory_summary(filters)
-    if not directory_df.empty:
-        st.dataframe(directory_df.rename(columns={'emirate': 'District', 'curriculum': 'Curriculum', 'school_level': 'School Level', 'total_schools': 'Total Schools'}), use_container_width=True, hide_index=True)
-        _export_buttons(directory_df, 'state_dashboard_school_directory')
-    else:
-        st.info('No school directory summary is available for the selected filters.')
+    def _pick_col(df, *candidates):
+        if df is None or len(df) == 0:
+            return None
+        cols = set(df.columns)
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
 
-    st.markdown('---')
-    st.markdown(
-        "<div style='text-align:center;color:#757575;font-size:.85rem;'><strong>TutorCloud Global Dashboard</strong><br>© 2026 TutorCloud. All rights reserved.</div>",
-        unsafe_allow_html=True,
+    def _safe_num(v, digits=2):
+        try:
+            return f"{float(v):,.{digits}f}"
+        except Exception:
+            return "N/A"
+
+    selected_emirate = (
+        filters.get("emirate")
+        or filters.get("region_en")
+        or filters.get("emirate_en")
+        or "UAE"
     )
+    overview_title = selected_emirate if selected_emirate not in [None, "", "All"] else "UAE"
 
-# ── Tab 1: Overview ────────────────────────────────────────────────────────────
+    # India-style active filters in sidebar
+    active_filters = []
+    for key, label in [
+        ("emirate", "Emirate"),
+        ("education_type", "Education Type"),
+        ("gender", "Gender"),
+        ("nationality_category", "Nationality Category"),
+        ("curriculum", "Curriculum"),
+    ]:
+        val = filters.get(key)
+        if val not in [None, "", "All", []]:
+            active_filters.append(f"{label}: {val}")
+
+    if active_filters:
+        st.sidebar.markdown("### Active Filters")
+        for item in active_filters:
+            st.sidebar.markdown(f"- {item}")
+
+    # India-style KPI count: 6 only
+    total_schools = overview.get("total_schools", 0)
+    schools_with_enrollment = overview.get("schools_with_enrollment", overview.get("schools_with_students", 0))
+    total_districts = overview.get("total_districts", overview.get("districts", 0))
+    total_students = overview.get("total_students", 0)
+    total_teachers = overview.get("total_teachers", 0)
+    ptr_value = overview.get("ptr", overview.get("state_ptr", overview.get("ptr_national", None)))
+
+    st.markdown(f"## 📊 Overview: {overview_title}")
+    c1, c2, c3 = st.columns(3)
+    c4, c5, c6 = st.columns(3)
+
+    c1.metric("🏫 Total Schools", _fmt(total_schools))
+    c2.metric("🎓 Schools with Enrollment", _fmt(schools_with_enrollment))
+    c3.metric("🗺️ Districts", _fmt(total_districts))
+    c4.metric("📊 State PTR", _safe_num(ptr_value, 2) if ptr_value is not None else "N/A")
+    c5.metric("👥 Total Students", _fmt(total_students))
+    c6.metric("👨‍🏫 Total Teachers", _fmt(total_teachers))
+
+    # India-equivalent enrollment slot
+    st.markdown("## 📚 Enrollment Analysis")
+    if edu_df is not None and len(edu_df) > 0:
+        label_col = _pick_col(edu_df, "education_type", "school_type", "curriculum", "category")
+        value_col = _pick_col(edu_df, "total_students", "students", "student_count", "enrollment")
+        color_col = _pick_col(edu_df, "gender", "category", "education_type")
+
+        if label_col and value_col:
+            fig_edu = px.bar(
+                edu_df,
+                x=label_col,
+                y=value_col,
+                color=color_col if color_col in edu_df.columns and color_col != label_col else None,
+                title="Enrollment Analysis",
+                labels={label_col: "Category", value_col: "Students"},
+            )
+            fig_edu.update_layout(height=450, xaxis_tickangle=-35)
+            st.plotly_chart(fig_edu, use_container_width=True)
+        else:
+            st.info("Enrollment analysis is not available for the current selection.")
+    else:
+        st.info("Enrollment analysis is not available for the current selection.")
+
+    # India-equivalent district section
+    st.markdown("## 📍 District-Level PTR Analysis")
+    if district_df is not None and len(district_df) > 0:
+        district_col = _pick_col(district_df, "district_name", "district", "emirate", "region_en", "region")
+        schools_col = _pick_col(district_df, "total_schools", "schools", "school_count")
+        students_col = _pick_col(district_df, "total_students", "students", "student_count")
+        teachers_col = _pick_col(district_df, "total_teachers", "teachers", "teacher_count")
+        ptr_col = _pick_col(district_df, "ptr", "state_ptr", "district_ptr")
+
+        chart_df = district_df.copy()
+        if schools_col and schools_col in chart_df.columns:
+            chart_df[schools_col] = pd.to_numeric(chart_df[schools_col], errors="coerce")
+            chart_df = chart_df.sort_values(schools_col, ascending=False).head(20)
+
+        if district_col and ptr_col and district_col in chart_df.columns and ptr_col in chart_df.columns:
+            chart_df[ptr_col] = pd.to_numeric(chart_df[ptr_col], errors="coerce")
+            fig_district = px.bar(
+                chart_df,
+                x=district_col,
+                y=ptr_col,
+                title="Top 20 Districts by School Count",
+                hover_data=[c for c in [schools_col, students_col, teachers_col] if c in chart_df.columns],
+                labels={district_col: "District", ptr_col: "PTR"},
+            )
+            fig_district.update_layout(height=450, xaxis_tickangle=-45)
+            st.plotly_chart(fig_district, use_container_width=True)
+
+        display_df = district_df.copy()
+        if ptr_col and ptr_col in display_df.columns:
+            display_df[ptr_col] = pd.to_numeric(display_df[ptr_col], errors="coerce").round(2)
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        st.download_button(
+            label="📥 Download District Data (CSV)",
+            data=display_df.to_csv(index=False).encode("utf-8"),
+            file_name="uae_state_dashboard_district_data.csv",
+            mime="text/csv",
+        )
+    else:
+        st.info("District-level PTR analysis is not available for the current selection.")
+
+    # India-equivalent conditional lower-level section
+    st.markdown("## 🏘️ Lower-Level Analysis")
+    st.info("A UAE block-equivalent drilldown is not yet exposed in the current renderer. This section is reserved for parity completion.")
+
+    _render_footer()
 
 def _uae_tab_overview(filters):
     enr_cols    = _tbl_cols("uae_fact_enrollment")
