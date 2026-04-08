@@ -207,6 +207,18 @@ def _load_nz_state_school_frame():
     }
 
 
+
+def _fmt_ptr_ratio(ptr_ratio) -> str:
+    try:
+        if ptr_ratio is None or pd.isna(ptr_ratio):
+            return "N/A"
+        ptr_ratio = float(ptr_ratio)
+        if ptr_ratio <= 0:
+            return "N/A"
+        return f"{int(round(ptr_ratio))}:1"
+    except Exception:
+        return "N/A"
+
 def render_nz_home() -> None:
     inject_professional_css()
 
@@ -241,7 +253,7 @@ def render_nz_home() -> None:
     c2.metric("TOTAL SCHOOLS", _fmt_int(bundle["total_schools"]))
     c3.metric("TOTAL STUDENTS", _fmt_int(bundle["total_students"]))
     c4.metric(f"TOTAL TEACHERS ({bundle['teacher_year']} HC)", _fmt_int(bundle["total_teacher_headcount"]))
-    c5.metric("PTR (FTTE OVERLAP)", _fmt_float(bundle["ptr_ftte"], 2) if bundle["ptr_ftte"] is not None else "N/A")
+    c5.metric("PTR (FTTE OVERLAP)", _fmt_ptr_ratio(bundle["ptr_ftte"]))
     c6.metric("STUDENTS / SCHOOL", _fmt_float(bundle["students_per_school"], 1) if bundle["students_per_school"] is not None else "N/A")
 
     st.caption(
@@ -536,7 +548,7 @@ def render_nz_state_dashboard() -> None:
     c1.metric("🏫 Total Schools", _fmt_int(total_schools))
     c2.metric("🎓 Schools with Enrollment", _fmt_int(schools_with_enrollment))
     c3.metric("🗺️ Territorial Authorities", _fmt_int(total_tas))
-    c4.metric("📊 PTR", _fmt_float(ptr_value, 2) if ptr_value is not None else "N/A")
+    c4.metric("📊 PTR", _fmt_ptr_ratio(ptr_value))
     c5.metric("👥 Total Students", _fmt_int(total_students))
     c6.metric("👨‍🏫 Total Teachers", _fmt_int(total_teachers))
 
@@ -614,7 +626,7 @@ def render_nz_state_dashboard() -> None:
 
         ta_display = ta_summary.copy()
         if "ptr" in ta_display.columns:
-            ta_display["ptr"] = pd.to_numeric(ta_display["ptr"], errors="coerce").round(2)
+            ta_display["ptr"] = pd.to_numeric(ta_display["ptr"], errors="coerce").apply(_fmt_ptr_ratio)
         st.dataframe(ta_display, use_container_width=True, hide_index=True)
 
         st.download_button(
@@ -671,7 +683,7 @@ def render_nz_state_dashboard() -> None:
 
         sa2_display = sa2_summary.copy()
         if "ptr" in sa2_display.columns:
-            sa2_display["ptr"] = pd.to_numeric(sa2_display["ptr"], errors="coerce").round(2)
+            sa2_display["ptr"] = pd.to_numeric(sa2_display["ptr"], errors="coerce").apply(_fmt_ptr_ratio)
         st.dataframe(sa2_display, use_container_width=True, hide_index=True)
 
         st.download_button(
@@ -1044,7 +1056,7 @@ def render_nz_analytics() -> None:
         c1.metric("Total Schools", _fmt_int(total_schools))
         c2.metric("Total Students", _fmt_int(total_students))
         c3.metric("Total Teachers", _fmt_int(total_teachers))
-        c4.metric("PTR", _fmt_float(ptr_value, 2) if ptr_value is not None else "N/A")
+        c4.metric("PTR", _fmt_ptr_ratio(ptr_value))
         c5.metric("Students per School", _fmt_float(students_per_school, 2) if students_per_school is not None else "N/A")
         c6.metric("Teachers per School", _fmt_float(teachers_per_school, 2) if teachers_per_school is not None else "N/A")
 
@@ -1241,7 +1253,7 @@ def render_nz_analytics() -> None:
                     report = report.rename(columns=rename_map)
 
                     if "PTR" in report.columns:
-                        report["PTR"] = pd.to_numeric(report["PTR"], errors="coerce").round(2)
+                        report["PTR"] = pd.to_numeric(report["PTR"], errors="coerce").apply(_fmt_ptr_ratio)
 
                     st.dataframe(report, use_container_width=True, hide_index=True)
 

@@ -315,6 +315,19 @@ def _fmt_ptr(students, teachers) -> str:
         return "N/A"
 
 
+def _fmt_ptr_ratio(ptr_ratio) -> str:
+    """Format an already-computed PTR ratio as integer X:1."""
+    try:
+        if ptr_ratio is None or pd.isna(ptr_ratio):
+            return "N/A"
+        ptr_ratio = float(ptr_ratio)
+        if ptr_ratio <= 0:
+            return "N/A"
+        return f"{int(round(ptr_ratio))}:1"
+    except Exception:
+        return "N/A"
+
+
 def _fmt_dec(val, decimals=2) -> str:
     """Format a float to N decimal places."""
     try:
@@ -899,8 +912,14 @@ def _uae_emirate_analysis(filters: dict) -> pd.DataFrame:
     for frame in frames[1:]:
         out = out.merge(frame, on='emirate', how='outer')
     out = out.fillna(0)
-    out['ptr_ratio'] = out.apply(lambda r: (float(r['total_students']) / float(r['total_teachers'])) if float(r.get('total_teachers', 0) or 0) > 0 else None, axis=1)
-    out['PTR'] = out['ptr_ratio'].apply(lambda x: f"{int(round(float(x)))}:1" if x not in (None, 0) and pd.notna(x) else 'N/A')
+    out['ptr_ratio'] = out.apply(
+        lambda r: (
+            float(r['total_students']) / float(r['total_teachers'])
+            if float(r.get('total_teachers', 0) or 0) > 0 else None
+        ),
+        axis=1
+    )
+    out['PTR'] = out['ptr_ratio'].apply(_fmt_ptr_ratio)
     return out.sort_values(['total_students', 'total_schools'], ascending=[False, False])
 
 
@@ -1019,7 +1038,7 @@ def render_uae_state_dashboard():
     c1.metric("🏫 Total Schools", _fmt(total_schools))
     c2.metric("🎓 Schools with Enrollment", _fmt(schools_with_enrollment))
     c3.metric("🗺️ Districts", _fmt(total_districts))
-    c4.metric("📊 State PTR", _safe_num(ptr_value, 2) if ptr_value is not None else "N/A")
+    c4.metric("📊 State PTR", overview.get("state_ptr", "N/A"))
     c5.metric("👥 Total Students", _fmt(total_students))
     c6.metric("👨‍🏫 Total Teachers", _fmt(total_teachers))
 
@@ -1075,7 +1094,7 @@ def render_uae_state_dashboard():
 
         display_df = district_df.copy()
         if ptr_col and ptr_col in display_df.columns:
-            display_df[ptr_col] = pd.to_numeric(display_df[ptr_col], errors="coerce").round(2)
+            display_df[ptr_col] = pd.to_numeric(display_df[ptr_col], errors="coerce").apply(_fmt_ptr_ratio)
         st.dataframe(display_df, use_container_width=True, hide_index=True)
 
         st.download_button(
@@ -1154,11 +1173,14 @@ def render_uae_state_dashboard():
                     lambda r: round(r["Total Students"] / r["Total Teachers"], 2) if r["Total Teachers"] else None,
                     axis=1
                 )
+                lower_df["ptr_formatted"] = lower_df["PTR"].apply(_fmt_ptr_ratio)
 
                 display_lower_df = lower_df[["Curriculum", "Total Schools", "Total Students", "Total Teachers", "PTR"]].copy()
+                display_lower_df["PTR"] = display_lower_df["PTR"].apply(_fmt_ptr_ratio)
                 st.dataframe(display_lower_df, use_container_width=True, hide_index=True)
 
-                chart_df = display_lower_df.dropna(subset=["PTR"]).copy()
+                chart_df = lower_df.dropna(subset=["PTR"]).copy()
+                chart_df["ptr_formatted"] = chart_df["PTR"].apply(_fmt_ptr_ratio)
                 chart_df = chart_df.sort_values(["Total Schools", "PTR"], ascending=[False, False])
 
                 if len(chart_df) > 1:
@@ -1170,7 +1192,12 @@ def render_uae_state_dashboard():
                         labels={"Curriculum": "Curriculum", "PTR": "Pupil-Teacher Ratio"},
                         color="PTR",
                         color_continuous_scale="RdYlGn_r",
-                        hover_data={"PTR": False}
+                        custom_data=["ptr_formatted"]
+                    )
+                    fig_lower.update_traces(
+                        hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>",
+                        text=chart_df.head(20)["ptr_formatted"],
+                        textposition="outside"
                     )
                     fig_lower.update_layout(
                         xaxis_tickangle=-45,
@@ -1225,6 +1252,7 @@ def _uae_tab_overview(filters):
                               showlegend=False, coloraxis_showscale=False,
                               xaxis=dict(tickangle=-45),
                               margin=dict(l=60, r=220, t=80, b=120))
+            fig.update_traces(hovertemplate="<b>%{y}</b><br>PTR: %{text}<extra></extra>")
             st.plotly_chart(fig, use_container_width=True)
 
     # Education-type stacked bar
@@ -1414,12 +1442,13 @@ def _uae_tab_teachers(filters):
         if not df_t.empty and not df_e.empty:
             df_ptr = df_e.merge(df_t, on="emirate", how="inner")
             df_ptr["PTR"] = (df_ptr["students"] / df_ptr["teachers"]).apply(
-                lambda x: int(round(x)) if pd.notna(x) and x > 0 else 0)
+                lambda x: float(x) if pd.notna(x) and x > 0 else None)
+            df_ptr["ptr_formatted"] = df_ptr["PTR"].apply(_fmt_ptr_ratio)
             df_ptr = df_ptr.sort_values("PTR", ascending=False)
             fig = px.bar(df_ptr, x="PTR", y="emirate", orientation="h",
                          color="PTR", color_continuous_scale="RdYlGn_r",
                          labels={"emirate": "Emirate", "PTR": "Students per Teacher"},
-                         text="PTR")
+                         text="ptr_formatted")
             fig.update_traces(texttemplate="%{text:d}", textposition="outside")
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=340,
                               margin=dict(l=120, t=30))
@@ -1767,7 +1796,7 @@ def render_uae_analytics():
         out['Total Schools'] = pd.to_numeric(_safe_series(src, 'total_schools', 'schools'), errors='coerce').fillna(0)
         out['Total Students'] = pd.to_numeric(_safe_series(src, 'total_students', 'students'), errors='coerce').fillna(0)
         out['Total Teachers'] = pd.to_numeric(_safe_series(src, 'total_teachers', 'teachers'), errors='coerce').fillna(0)
-        out['PTR'] = pd.to_numeric(_safe_series(src, 'ptr_ratio', 'PTR', 'ptr'), errors='coerce')
+        out['PTR'] = pd.to_numeric(_safe_series(src, 'ptr_ratio', 'PTR', 'ptr'), errors='coerce').apply(_fmt_ptr_ratio)
         out['Students per School'] = out.apply(lambda r: (r['Total Students'] / r['Total Schools']) if r['Total Schools'] else None, axis=1)
         out['Teachers per School'] = out.apply(lambda r: (r['Total Teachers'] / r['Total Schools']) if r['Total Schools'] else None, axis=1)
         out = out.dropna(subset=['Location'])
@@ -1884,7 +1913,7 @@ def render_uae_analytics():
         with c3:
             st.metric("👨‍🏫 Total Teachers", _fmt(total_teachers))
         with c4:
-            st.metric("📊 PTR", ptr_value)
+            st.metric("📊 PTR", _fmt_ptr_ratio(ptr_value))
         with c5:
             schools_num = _as_float(total_schools)
             students_num = _as_float(total_students)
@@ -2203,7 +2232,7 @@ def _uae_analytics_perf(filters):
 
     k4, k5, k6 = st.columns(3)
     ptr_color = "normal" if ptr and ptr < 30 else "inverse"
-    with k4: st.metric("📐 PTR", f"{ptr}:1" if ptr else "N/A", delta_color=ptr_color)
+    with k4: st.metric("📐 PTR", _fmt_ptr_ratio(ptr), delta_color=ptr_color)
     with k5: st.metric("📚 Students/School",        _fmt(sps) if sps else "N/A")
     with k6: st.metric("🏫 Teachers/School",        f"{tps:.2f}" if tps else "N/A")
 
@@ -2320,7 +2349,7 @@ def _uae_analytics_compare(filters):
             if v is None:
                 return "N/A"
             if k == "PTR":
-                try: return f"{int(round(float(v)))}:1"
+                try: return _fmt_ptr_ratio(v)
                 except: return "N/A"
             if k == "Students/School":
                 try: return _fmt(int(round(float(v))))
@@ -2502,7 +2531,7 @@ def _uae_analytics_custom(filters):
 
     # Format PTR column if present
     if "PTR" in df.columns:
-        df["PTR"] = df["PTR"].apply(lambda v: f"{int(v)}:1" if pd.notna(v) else "N/A")
+        df["PTR"] = df["PTR"].apply(_fmt_ptr_ratio)
 
     st.markdown(f"**{len(df)} rows** returned")
     st.dataframe(df, use_container_width=True)

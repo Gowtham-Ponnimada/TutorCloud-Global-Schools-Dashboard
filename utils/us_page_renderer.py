@@ -1044,10 +1044,10 @@ def render_us_state_dashboard():
                 labels={"district_name": "District", "ptr": "PTR"},
                 color="ptr",
                 color_continuous_scale="RdYlGn_r",
-                custom_data=["ptr"],
+                custom_data=["ptr_formatted"],
             )
             fig_district.update_traces(
-                hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]:.2f}<extra></extra>"
+                hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>"
             )
             fig_district.update_layout(xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120))
             st.plotly_chart(fig_district, use_container_width=True, config={"displayModeBar": False})
@@ -1076,10 +1076,10 @@ def render_us_state_dashboard():
                     labels={"city": "City", "ptr": "PTR"},
                     color="ptr",
                     color_continuous_scale="RdYlGn_r",
-                    custom_data=["ptr"],
+                    custom_data=["ptr_formatted"],
                 )
                 fig_city.update_traces(
-                    hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]:.2f}<extra></extra>"
+                    hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>"
                 )
                 fig_city.update_layout(xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120))
                 st.plotly_chart(fig_city, use_container_width=True, config={"displayModeBar": False})
