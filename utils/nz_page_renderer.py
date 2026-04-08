@@ -993,7 +993,187 @@ def render_nz_analytics() -> None:
         )
 
     with tabs[2]:
-        st.info("Step 3 next: NZ Comparative Analysis tab will be implemented here.")
+        st.markdown("### Comparative Analysis")
+
+        csel1, csel2, csel3 = st.columns(3)
+
+        compare_level = csel1.selectbox(
+            "Comparison Level",
+            [
+                "Regional Council vs Regional Council",
+                "Territorial Authority vs Territorial Authority",
+            ],
+            index=0,
+            key="nz_analytics_compare_level",
+        )
+
+        scope_region_options = ["All"] + sorted(
+            [x for x in df.get("regional_council", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        scope_region = csel2.selectbox(
+            "Scope Regional Council",
+            scope_region_options,
+            index=0,
+            key="nz_analytics_compare_scope_region",
+        )
+
+        compare_note = (
+            "Compare two regional councils or two territorial authorities using the filtered NZ school, student, and teacher data. "
+            "Students use 2025 rolls; PTR uses FTTE-overlap where teacher FTTE exists."
+        )
+        csel3.markdown(
+            f"""
+            <div style="padding-top: 0.4rem;">
+                <div style="font-size:0.82rem;color:#6b7280;font-weight:600;">Comparison Notes</div>
+                <div style="font-size:0.9rem;color:#374151;line-height:1.35;">{compare_note}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        base_cmp = df.copy()
+        if scope_region != "All" and "regional_council" in base_cmp.columns:
+            base_cmp = base_cmp[base_cmp["regional_council"] == scope_region]
+
+        if compare_level == "Regional Council vs Regional Council":
+            label_col = "regional_council"
+            compare_title = "Regional Council Comparison"
+        else:
+            label_col = "territorial_authority"
+            compare_title = "Territorial Authority Comparison"
+
+        compare_options = sorted(
+            [x for x in base_cmp.get(label_col, pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+
+        if len(compare_options) < 2:
+            st.info("Not enough locations are available for comparison under the current selection.")
+        else:
+            loc1_col, loc2_col = st.columns(2)
+            location_a = loc1_col.selectbox(
+                "Location A",
+                compare_options,
+                index=0,
+                key="nz_analytics_compare_location_a",
+            )
+            default_b_index = 1 if len(compare_options) > 1 else 0
+            location_b = loc2_col.selectbox(
+                "Location B",
+                compare_options,
+                index=default_b_index,
+                key="nz_analytics_compare_location_b",
+            )
+
+            def _cmp_summary(frame: pd.DataFrame, label: str) -> dict:
+                schools = int(frame["school_id"].nunique()) if "school_id" in frame.columns else len(frame)
+                students = float(frame["total_students"].fillna(0).sum()) if "total_students" in frame.columns else 0
+                teacher_hc = float(frame["teacher_headcount"].fillna(0).sum()) if "teacher_headcount" in frame.columns else 0
+                teacher_ftte = float(frame["teacher_ftte"].fillna(0).sum()) if "teacher_ftte" in frame.columns else 0
+                ptr_ftte = (students / teacher_ftte) if teacher_ftte > 0 else None
+                students_per_school = (students / schools) if schools > 0 else None
+                territorial_authorities = int(frame["territorial_authority"].nunique()) if "territorial_authority" in frame.columns else None
+
+                return {
+                    "Location": label,
+                    "Schools": schools,
+                    "Students": students,
+                    "Teacher Headcount": teacher_hc,
+                    "Teacher FTTE": teacher_ftte,
+                    "PTR (FTTE)": ptr_ftte,
+                    "Students / School": students_per_school,
+                    "Territorial Authorities": territorial_authorities,
+                }
+
+            frame_a = base_cmp[base_cmp[label_col] == location_a].copy()
+            frame_b = base_cmp[base_cmp[label_col] == location_b].copy()
+
+            summary_a = _cmp_summary(frame_a, location_a)
+            summary_b = _cmp_summary(frame_b, location_b)
+
+            if location_a == location_b:
+                st.warning("Location A and Location B are the same. Select two different locations for a meaningful comparison.")
+
+            k1, k2, k3 = st.columns(3)
+            k4, k5, k6 = st.columns(3)
+
+            k1.metric(f"{location_a} — Students", _fmt_int(summary_a["Students"]))
+            k2.metric(f"{location_b} — Students", _fmt_int(summary_b["Students"]))
+            student_delta = summary_b["Students"] - summary_a["Students"]
+            k3.metric("Student Delta (B - A)", _fmt_int(student_delta))
+
+            k4.metric(
+                f"{location_a} — PTR (FTTE)",
+                _fmt_float(summary_a["PTR (FTTE)"], 2) if summary_a["PTR (FTTE)"] is not None else "N/A"
+            )
+            k5.metric(
+                f"{location_b} — PTR (FTTE)",
+                _fmt_float(summary_b["PTR (FTTE)"], 2) if summary_b["PTR (FTTE)"] is not None else "N/A"
+            )
+            ptr_delta = (
+                summary_b["PTR (FTTE)"] - summary_a["PTR (FTTE)"]
+                if summary_a["PTR (FTTE)"] is not None and summary_b["PTR (FTTE)"] is not None
+                else None
+            )
+            k6.metric("PTR Delta (B - A)", _fmt_float(ptr_delta, 2) if ptr_delta is not None else "N/A")
+
+            chart_rows = []
+            for metric in ["Schools", "Students", "Teacher Headcount", "Teacher FTTE", "PTR (FTTE)", "Students / School"]:
+                chart_rows.append({"Metric": metric, "Location": location_a, "Value": summary_a[metric]})
+                chart_rows.append({"Metric": metric, "Location": location_b, "Value": summary_b[metric]})
+
+            chart_df = pd.DataFrame(chart_rows)
+            chart_df["Value"] = pd.to_numeric(chart_df["Value"], errors="coerce")
+
+            fig_cmp = px.bar(
+                chart_df,
+                x="Metric",
+                y="Value",
+                color="Location",
+                barmode="group",
+                title=compare_title,
+                labels={"Metric": "Metric", "Value": "Value"},
+            )
+            fig_cmp.update_layout(height=460)
+            st.plotly_chart(fig_cmp, use_container_width=True)
+
+            comparison_table = pd.DataFrame({
+                "Metric": ["Schools", "Students", "Teacher Headcount", "Teacher FTTE", "PTR (FTTE)", "Students / School"],
+                f"{location_a}": [
+                    summary_a["Schools"],
+                    summary_a["Students"],
+                    summary_a["Teacher Headcount"],
+                    summary_a["Teacher FTTE"],
+                    summary_a["PTR (FTTE)"],
+                    summary_a["Students / School"],
+                ],
+                f"{location_b}": [
+                    summary_b["Schools"],
+                    summary_b["Students"],
+                    summary_b["Teacher Headcount"],
+                    summary_b["Teacher FTTE"],
+                    summary_b["PTR (FTTE)"],
+                    summary_b["Students / School"],
+                ],
+            })
+
+            comparison_table["Delta (B - A)"] = (
+                pd.to_numeric(comparison_table[f"{location_b}"], errors="coerce")
+                - pd.to_numeric(comparison_table[f"{location_a}"], errors="coerce")
+            )
+
+            for col in comparison_table.columns[1:]:
+                comparison_table[col] = pd.to_numeric(comparison_table[col], errors="coerce").round(2)
+
+            st.markdown("### Comparison Table")
+            st.dataframe(comparison_table, use_container_width=True, hide_index=True)
+
+            cmp_csv = comparison_table.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download NZ analytics comparison table (CSV)",
+                data=cmp_csv,
+                file_name="nz_analytics_comparison_table.csv",
+                mime="text/csv",
+            )
 
     with tabs[3]:
         st.info("Step 4 next: NZ Custom Reports tab will be implemented here.")
