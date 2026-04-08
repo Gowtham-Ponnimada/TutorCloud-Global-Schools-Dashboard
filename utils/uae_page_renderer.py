@@ -1,6 +1,6 @@
 # utils/uae_page_renderer.py  ── v3.0 ── Full UAE Dashboard
 # Matches India dashboard UI/UX exactly (Home + State Dashboard + Analytics)
-# Academic year: 2024-2025 (fixed – no YoY comparisons)
+# 
 # Renders inside pages/1_Home.py, pages/2_State_Dashboard.py, pages/4_Analytics.py
 # based on st.session_state["selected_region"] == "UAE"
 
@@ -73,12 +73,7 @@ UAE_CSS = """
     padding-bottom: 6px; margin: 20px 0 14px 0;
 }
 /* ── Flag banner ── */
-.uae-flag-banner {
-    background: linear-gradient(135deg, #006400 0%, #008000 50%, #C8102E 100%);
-    color: white; padding: 14px 22px; border-radius: 10px;
-    font-size: 20px; font-weight: 700; margin-bottom: 16px;
-    display: flex; align-items: center; gap: 10px;
-}
+
 /* ── Info box ── */
 .uae-info-box {
     background: #EAF4EA; border-left: 4px solid #006400;
@@ -117,12 +112,7 @@ UAE_CSS = """
     border-left: 4px solid #006400;
 }
 /* ── Sidebar UAE marker ── */
-.uae-sidebar-badge {
-    background: linear-gradient(90deg,#006400,#C8102E);
-    color: white; border-radius: 6px; padding: 4px 10px;
-    font-size: 12px; font-weight: 700; margin-bottom: 8px;
-    display: inline-block;
-}
+
 /* ── Loading overlay ── */
 .stSpinner > div { display: none !important; }
 </style>
@@ -526,9 +516,9 @@ def render_uae_home():
     st.markdown(UAE_CSS, unsafe_allow_html=True)
 
     # ── Header (matches India: main-header + sub-header) ──────────────────────
-    st.markdown('<div class="main-header">🇦🇪 UAE Education Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">TutorCloud Global Dashboard</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="sub-header">National K-12 Education Overview — Academic Year 2024–2025</div>',
+        '<div class="sub-header">National K-12 Education Overview - UAE</div>',
         unsafe_allow_html=True
     )
     st.markdown("---")
@@ -580,11 +570,11 @@ def render_uae_home():
         total_enr = int(df.iloc[0, 0]) if not df.empty else 0
 
     with col1:
-        st.metric("TOTAL EMIRATES", str(em_count), help="Emirates with data coverage (2024-25)")
+        st.metric("TOTAL EMIRATES", str(em_count), help="States with data coverage")
     with col2:
-        st.metric("TOTAL SCHOOLS", _fmt(total_sch), help="Registered schools (2024-25)")
+        st.metric("TOTAL SCHOOLS", _fmt(total_sch), help="Total Schools")
     with col3:
-        st.metric("TOTAL STUDENTS", _fmt(total_enr), help="Total enrolled students (2024-25)")
+        st.metric("TOTAL STUDENTS", _fmt(total_enr), help="Total Students")
 
     # Row 2: Teachers, PTR, Students/School
     col4, col5, col6 = st.columns(3)
@@ -620,11 +610,11 @@ def render_uae_home():
                 pct_female = round(fem / total_g * 100, 1)
 
     with col4:
-        st.metric("TOTAL TEACHERS", _fmt(total_tch), help="Total registered teachers (2024-25)")
+        st.metric("TOTAL TEACHERS", _fmt(total_tch), help="Total Teachers")
     with col5:
-        st.metric("PTR (NATIONAL)", ptr_str, help="Pupil-Teacher Ratio (2024-25)")
+        st.metric("PTR (NATIONAL)", ptr_str, help="PTR")
     with col6:
-        st.metric("STUDENTS/SCHOOL", sps_str, help="Average students per school (2024-25)")
+        st.metric("STUDENTS/SCHOOL", sps_str, help="Students/School")
 
     st.markdown("---")
 
@@ -710,7 +700,7 @@ def render_uae_home():
             fig_g = px.pie(
                 df_g, names="gender", values="students",
                 color_discrete_sequence=["#006400", "#C8102E", "#FFD700"],
-                hole=0.45, title="Gender Distribution (2024-25)"
+                hole=0.45, title="Gender Distribution"
             )
             fig_g.update_layout(height=300, margin=dict(t=40, b=20))
             g1, g2 = st.columns([1, 2])
@@ -765,7 +755,7 @@ reflecting the scale of UAE's education institutions.
     border-radius:8px; font-weight:700; font-size:1.1rem;
     box-shadow:0 4px 12px rgba(0,0,0,.2); border:3px solid #006400;
     transition:all 0.3s ease;">
-    📊 Emirates Dashboard
+    📊 State Dashboard
 </a>
 """, unsafe_allow_html=True)
         st.markdown("""
@@ -787,7 +777,7 @@ Drill into emirate-level data with advanced filtering.
     border-radius:8px; font-weight:700; font-size:1.1rem;
     box-shadow:0 4px 12px rgba(0,0,0,.2); border:3px solid #C8102E;
     transition:all 0.3s ease;">
-    📈 UAE Analytics
+    📈 Analytics
 </a>
 """, unsafe_allow_html=True)
         st.markdown("""
@@ -1245,7 +1235,7 @@ def _uae_tab_teachers(filters):
     enr_em_col  = _pick_col(enr_cols, "region_en", "emirate", "emirate_en", "region")
     enr_cnt_col = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
     if emirate_col and tch_cnt_col and enr_em_col and enr_cnt_col:
-        st.markdown('<div class="uae-section-header">📐 Pupil-Teacher Ratio (PTR) by Emirate</div>', unsafe_allow_html=True)
+        st.markdown('<div class="uae-section-header">📐 PTR (PTR) by Emirate</div>', unsafe_allow_html=True)
         df_t = _q(f"SELECT {emirate_col} AS emirate, SUM({tch_cnt_col}) AS teachers "
                   f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s GROUP BY {emirate_col}",
                   [UAE_YEAR])
@@ -1549,7 +1539,7 @@ def render_uae_analytics():
         _inject_css()
     st.markdown(UAE_CSS, unsafe_allow_html=True)
     st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Advanced Educational Analytics - UAE</div>', unsafe_allow_html=True)
 
     filters = {}
     tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
@@ -1591,7 +1581,7 @@ def _uae_analytics_geo(filters):
     # Metric selector (same as India)
     metric_choice = st.selectbox(
         "📊 Select Metric to Visualize",
-        ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
+        ["PTR (PTR)", "Students per School", "Total Students", "Total Schools"],
         key="uae_geo_metric"
     )
 
@@ -1644,7 +1634,7 @@ def _uae_analytics_geo(filters):
             df = pd.DataFrame()
         y_label = "Students per School"
 
-    elif metric_choice == "PTR (Pupil-Teacher Ratio)":
+    elif metric_choice == "PTR (PTR)":
         df_t = _q(f"SELECT {_pick_col(tch_cols,'region_en','emirate','emirate_en','region')} AS emirate, "
                   f"SUM({tch_cnt_col}) AS teachers "
                   f"FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s GROUP BY 1", [UAE_YEAR])

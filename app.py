@@ -3,7 +3,7 @@ import streamlit as st
 st.session_state.pop('_badge_rendered', None)
 
 # TutorCloud Global Dashboard — Multi-Region
-# India: ✅ Live  |  UAE: ✅ Live  |  USA / AUS / NZ: Coming Soon
+# Region routing and readiness are controlled by page-level renderers.
 
 pages = [
     st.Page("pages/1_🏠_Home.py",            title="Home"),
