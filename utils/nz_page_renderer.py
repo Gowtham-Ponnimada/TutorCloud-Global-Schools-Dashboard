@@ -209,108 +209,202 @@ def _load_nz_state_school_frame():
 
 def render_nz_home() -> None:
     inject_professional_css()
-    st.markdown("# 🏠 TutorCloud Global Dashboard")
-    st.markdown("**National K-12 Education Overview - New Zealand**")
-    st.markdown("---")
+
+    st.markdown(
+        """
+        <div class="main-header">
+            <h1>🇳🇿 New Zealand Education Dashboard</h1>
+            <p>National overview of schools, students, teachers, and geography-aligned education metrics for New Zealand.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     bundle = _load_nz_home_bundle()
-    if not bundle.get("ok"):
-        st.error("NZ Home data files are missing. Please complete the processed NZ pipeline first.")
-        st.code("\n".join(bundle.get("missing", [])))
+    if not bundle.get("ok", False):
+        st.error("NZ Home data could not be loaded. Check the processed NZ CSV files.")
         _render_source_links()
         _render_nz_footer()
         return
 
+    def _pick_col(df: pd.DataFrame, candidates: list[str]):
+        if df is None or df.empty:
+            return None
+        cols = set(df.columns)
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
+
+    st.markdown("### National Overview")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1:
-        st.metric("TOTAL REGIONS", _fmt_int(bundle["total_regions"]))
-    with c2:
-        st.metric("TOTAL SCHOOLS", _fmt_int(bundle["total_schools"]))
-    with c3:
-        st.metric("TOTAL STUDENTS", _fmt_int(bundle["total_students"]))
-    with c4:
-        st.metric(f"TOTAL TEACHERS ({bundle['teacher_year']} HC)", _fmt_int(bundle["total_teacher_headcount"]))
-    with c5:
-        st.metric("PTR (FTTE OVERLAP)", _fmt_float(bundle["ptr_ftte"], 2))
-    with c6:
-        st.metric("STUDENTS / SCHOOL", _fmt_float(bundle["students_per_school"], 1))
+    c1.metric("TOTAL REGIONS", _fmt_int(bundle["total_regions"]))
+    c2.metric("TOTAL SCHOOLS", _fmt_int(bundle["total_schools"]))
+    c3.metric("TOTAL STUDENTS", _fmt_int(bundle["total_students"]))
+    c4.metric(f"TOTAL TEACHERS ({bundle['teacher_year']} HC)", _fmt_int(bundle["total_teacher_headcount"]))
+    c5.metric("PTR (FTTE OVERLAP)", _fmt_float(bundle["ptr_ftte"], 2) if bundle["ptr_ftte"] is not None else "N/A")
+    c6.metric("STUDENTS / SCHOOL", _fmt_float(bundle["students_per_school"], 1) if bundle["students_per_school"] is not None else "N/A")
 
     st.caption(
-        f"Students use 2025 School Rolls. Teachers use {bundle['teacher_year']} regular teacher data. "
-        f"PTR is calculated only on the rolls-teacher overlap set "
-        f"({_fmt_int(bundle['overlap_students'])} students across {_fmt_int(bundle['overlap_schools'])} schools)."
+        "Students use 2025 school rolls. Teacher metrics use the latest teacher dataset available in the processed NZ files "
+        f"({bundle['teacher_year']} in the current bundle). PTR is FTTE-overlap based."
     )
 
-    d1, d2, d3 = st.columns(3)
-    with d1:
-        st.metric("GEOCODED ROLL SCHOOLS", _fmt_int(bundle["mapped_schools"]))
-    with d2:
-        st.metric("GEOCODED STUDENTS FOR MAPS", _fmt_int(bundle["mapped_students"]))
-    with d3:
-        st.metric(f"TOTAL TEACHER FTTE ({bundle['teacher_year']})", _fmt_float(bundle["total_teacher_ftte"], 1))
+    s1, s2, s3 = st.columns(3)
+    s1.metric("GEOCODED ROLL SCHOOLS", _fmt_int(bundle["mapped_schools"]))
+    s2.metric("GEOCODED STUDENTS FOR MAPS", _fmt_int(bundle["mapped_students"]))
+    s3.metric("TOTAL TEACHER FTE", _fmt_float(bundle["total_teacher_ftte"], 2))
+
+    regional_chart = bundle.get("regional_chart", pd.DataFrame())
+    ta_chart = bundle.get("ta_chart", pd.DataFrame())
+    regional_full = bundle.get("regional", pd.DataFrame())
 
     left, right = st.columns(2)
 
-    with left:
-        st.markdown("### 📍 Top Regional Councils by Students")
-        reg = bundle["regional_chart"].copy()
-        if not reg.empty and "total_students_2025" in reg.columns:
-            reg = reg.sort_values("total_students_2025", ascending=True)
+    if regional_chart is not None and not regional_chart.empty:
+        region_label_col = _pick_col(regional_chart, ["regional_council", "region", "name"])
+        region_value_col = _pick_col(regional_chart, ["total_students_2025", "total_students", "students", "mapped_students"])
+        if region_label_col and region_value_col:
             fig_reg = px.bar(
-                reg,
-                x="total_students_2025",
-                y="regional_council",
+                regional_chart,
+                x=region_value_col,
+                y=region_label_col,
                 orientation="h",
-                text="total_students_2025",
-                color="total_students_2025",
+                title="Top Regional Councils by Students",
+                color=region_value_col,
                 color_continuous_scale="Blues",
             )
-            fig_reg.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-            fig_reg.update_layout(
-                height=460,
-                margin=dict(l=10, r=10, t=10, b=10),
-                coloraxis_showscale=False,
-                xaxis_title="Students (2025)",
-                yaxis_title="",
-            )
-            st.plotly_chart(fig_reg, use_container_width=True)
+            fig_reg.update_layout(height=430, yaxis={"categoryorder": "total ascending"})
+            left.plotly_chart(fig_reg, use_container_width=True)
         else:
-            st.info("Regional council chart data is not available yet.")
+            left.info("Regional student chart columns were not available in the NZ Home bundle.")
+    else:
+        left.info("No regional student chart data is available for NZ Home.")
 
-    with right:
-        st.markdown("### 🏙️ Top Territorial Authorities by Students")
-        ta = bundle["ta_chart"].copy()
-        if not ta.empty and "total_students_2025" in ta.columns:
-            ta = ta.sort_values("total_students_2025", ascending=True)
-            ta["label"] = ta["territorial_authority"].astype(str)
+    if ta_chart is not None and not ta_chart.empty:
+        ta_label_col = _pick_col(ta_chart, ["territorial_authority", "ta_name", "name"])
+        ta_value_col = _pick_col(ta_chart, ["total_students_2025", "total_students", "students", "mapped_students"])
+        if ta_label_col and ta_value_col:
             fig_ta = px.bar(
-                ta,
-                x="total_students_2025",
-                y="label",
+                ta_chart,
+                x=ta_value_col,
+                y=ta_label_col,
                 orientation="h",
-                text="total_students_2025",
-                color="regional_council" if "regional_council" in ta.columns else None,
+                title="Top Territorial Authorities by Students",
+                color=ta_value_col,
+                color_continuous_scale="Tealgrn",
             )
-            fig_ta.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-            fig_ta.update_layout(
-                height=460,
-                margin=dict(l=10, r=10, t=10, b=10),
-                xaxis_title="Students (2025)",
-                yaxis_title="",
-                legend_title_text="Regional Council",
-            )
-            st.plotly_chart(fig_ta, use_container_width=True)
+            fig_ta.update_layout(height=430, yaxis={"categoryorder": "total ascending"})
+            right.plotly_chart(fig_ta, use_container_width=True)
         else:
-            st.info("Territorial authority chart data is not available yet.")
+            right.info("Territorial authority chart columns were not available in the NZ Home bundle.")
+    else:
+        right.info("No territorial authority chart data is available for NZ Home.")
 
-    st.markdown("### 📋 Coverage & Method Notes")
-    st.markdown(
+    st.markdown("### Top Regional Councils by School Count")
+
+    if regional_full is not None and not regional_full.empty:
+        school_region_col = _pick_col(regional_full, ["regional_council", "region", "name"])
+        school_count_col = _pick_col(regional_full, ["total_schools", "schools", "school_count", "schools_in_directory", "schools_total"])
+        if school_region_col and school_count_col:
+            school_count_df = regional_full[[school_region_col, school_count_col]].copy()
+            school_count_df = school_count_df.dropna().sort_values(school_count_col, ascending=False).head(10)
+            fig_school_count = px.bar(
+                school_count_df,
+                x=school_count_col,
+                y=school_region_col,
+                orientation="h",
+                title="Top Regional Councils by School Count",
+                color=school_count_col,
+                color_continuous_scale="Purples",
+            )
+            fig_school_count.update_layout(height=430, yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig_school_count, use_container_width=True)
+        else:
+            st.info("Regional school-count columns were not available in the NZ Home bundle.")
+    else:
+        st.info("No regional school-count summary is available for NZ Home.")
+
+    top_region_text = "Regional comparison data is available in the charts above."
+    if regional_chart is not None and not regional_chart.empty:
+        rl = _pick_col(regional_chart, ["regional_council", "region", "name"])
+        rv = _pick_col(regional_chart, ["total_students_2025", "total_students", "students", "mapped_students"])
+        if rl and rv:
+            top_row = regional_chart.iloc[0]
+            top_region_text = f"{top_row[rl]} currently leads the national regional ranking with {_fmt_int(top_row[rv])} mapped students."
+
+    st.markdown("### Key Insights")
+    i1, i2, i3 = st.columns(3)
+
+    i1.markdown(
         f"""
-- National students KPI uses the cleaned 2025 school-roll fact table: **{_fmt_int(bundle["total_students"])}** students.
-- Geographic charts use canonically matched school geography from the NZ schools directory: **{_fmt_int(bundle["mapped_students"])}** mapped students.
-- Teacher metrics use **{bundle["teacher_year"]}** regular teacher headcount / FTTE only.
-- PTR shown here is **FTTE overlap PTR**, not a full all-schools national PTR.
+        <div style="background:#ffffff;border:1px solid #dbeafe;border-radius:14px;padding:18px;min-height:180px;">
+            <div style="font-size:1.05rem;font-weight:700;color:#1e3a8a;margin-bottom:10px;">📚 School Coverage</div>
+            <div style="font-size:0.95rem;color:#374151;line-height:1.55;">
+                New Zealand Home currently covers <strong>{_fmt_int(bundle['total_schools'])}</strong> schools in the directory,
+                with <strong>{_fmt_int(bundle['mapped_schools'])}</strong> geocoded roll schools supporting map-ready analytics.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    i2.markdown(
+        f"""
+        <div style="background:#ffffff;border:1px solid #dcfce7;border-radius:14px;padding:18px;min-height:180px;">
+            <div style="font-size:1.05rem;font-weight:700;color:#166534;margin-bottom:10px;">👨‍🏫 Teaching Staff</div>
+            <div style="font-size:0.95rem;color:#374151;line-height:1.55;">
+                Teacher reporting currently uses the <strong>{bundle['teacher_year']}</strong> NZ teacher dataset,
+                with <strong>{_fmt_int(bundle['total_teacher_headcount'])}</strong> headcount and
+                <strong>{_fmt_float(bundle['total_teacher_ftte'], 2)}</strong> FTTE in the processed national bundle.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    i3.markdown(
+        f"""
+        <div style="background:#ffffff;border:1px solid #ede9fe;border-radius:14px;padding:18px;min-height:180px;">
+            <div style="font-size:1.05rem;font-weight:700;color:#5b21b6;margin-bottom:10px;">🏫 School Size</div>
+            <div style="font-size:0.95rem;color:#374151;line-height:1.55;">
+                Average students per school are currently <strong>{_fmt_float(bundle['students_per_school'], 1) if bundle['students_per_school'] is not None else 'N/A'}</strong>.
+                {top_region_text}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("### 🧭 Explore More")
+    e1, e2 = st.columns(2)
+
+    e1.markdown(
         """
+        <a href="/State_Dashboard?region=New%20Zealand" target="_self" style="text-decoration:none;">
+            <div style="background:linear-gradient(135deg,#0ea5e9,#2563eb);color:white;border-radius:16px;padding:22px;min-height:150px;">
+                <div style="font-size:1.15rem;font-weight:800;margin-bottom:10px;">📊 State Dashboard</div>
+                <div style="font-size:0.97rem;line-height:1.5;">
+                    Explore regional council, territorial authority, school type, authority, and gender-level NZ drilldowns.
+                </div>
+            </div>
+        </a>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    e2.markdown(
+        """
+        <a href="/Analytics?region=New%20Zealand" target="_self" style="text-decoration:none;">
+            <div style="background:linear-gradient(135deg,#10b981,#059669);color:white;border-radius:16px;padding:22px;min-height:150px;">
+                <div style="font-size:1.15rem;font-weight:800;margin-bottom:10px;">📈 Analytics</div>
+                <div style="font-size:0.97rem;line-height:1.5;">
+                    Open NZ Geographic Maps, Performance Metrics, Comparative Analysis, and Custom Reports.
+                </div>
+            </div>
+        </a>
+        """,
+        unsafe_allow_html=True,
     )
 
     _render_source_links()
