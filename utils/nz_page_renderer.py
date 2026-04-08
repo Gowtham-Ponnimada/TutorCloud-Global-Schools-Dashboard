@@ -1176,7 +1176,226 @@ def render_nz_analytics() -> None:
             )
 
     with tabs[3]:
-        st.info("Step 4 next: NZ Custom Reports tab will be implemented here.")
+        st.markdown("### Custom Reports")
+
+        st.caption(
+            "Build grouped NZ reports from the filtered school-level dataset. "
+            "Students use 2025 school rolls; teacher metrics use the latest teacher dataset available in the processed NZ files. "
+            "PTR is FTTE-overlap based."
+        )
+
+        dim_options = {
+            "Regional Council": "regional_council",
+            "Territorial Authority": "territorial_authority",
+            "School Type": "school_type",
+            "Authority": "authority",
+            "Gender": "gender",
+        }
+
+        metric_options = {
+            "Schools": "schools",
+            "Students": "students",
+            "Teacher Headcount": "teacher_headcount",
+            "Teacher FTTE": "teacher_ftte",
+            "PTR (FTTE)": "ptr_ftte",
+            "Students / School": "students_per_school",
+        }
+
+        r1, r2, r3 = st.columns([2.2, 2.2, 1.1])
+
+        selected_dim_labels = r1.multiselect(
+            "Report Dimensions",
+            list(dim_options.keys()),
+            default=["Regional Council", "Territorial Authority"],
+            key="nz_analytics_custom_dimensions",
+        )
+
+        selected_metric_labels = r2.multiselect(
+            "Report Metrics",
+            list(metric_options.keys()),
+            default=["Schools", "Students", "Teacher FTTE", "PTR (FTTE)"],
+            key="nz_analytics_custom_metrics",
+        )
+
+        row_limit = r3.selectbox(
+            "Row Limit",
+            [100, 250, 500, 1000],
+            index=2,
+            key="nz_analytics_custom_row_limit",
+        )
+
+        f1, f2, f3 = st.columns(3)
+
+        custom_region_options = ["All"] + sorted(
+            [x for x in df.get("regional_council", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        custom_region = f1.selectbox(
+            "Scope Regional Council",
+            custom_region_options,
+            index=0,
+            key="nz_analytics_custom_scope_region",
+        )
+
+        custom_type_options = ["All"] + sorted(
+            [x for x in df.get("school_type", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        custom_type = f2.selectbox(
+            "Scope School Type",
+            custom_type_options,
+            index=0,
+            key="nz_analytics_custom_scope_type",
+        )
+
+        custom_authority_options = ["All"] + sorted(
+            [x for x in df.get("authority", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        custom_authority = f3.selectbox(
+            "Scope Authority",
+            custom_authority_options,
+            index=0,
+            key="nz_analytics_custom_scope_authority",
+        )
+
+        report_base = df.copy()
+
+        if custom_region != "All" and "regional_council" in report_base.columns:
+            report_base = report_base[report_base["regional_council"] == custom_region]
+        if custom_type != "All" and "school_type" in report_base.columns:
+            report_base = report_base[report_base["school_type"] == custom_type]
+        if custom_authority != "All" and "authority" in report_base.columns:
+            report_base = report_base[report_base["authority"] == custom_authority]
+
+        if report_base.empty:
+            st.info("No data is available for the current custom report selection.")
+        elif not selected_metric_labels:
+            st.warning("Select at least one metric to generate a custom report.")
+        else:
+            selected_group_cols = [dim_options[label] for label in selected_dim_labels]
+
+            def _build_report(frame: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+                if group_cols:
+                    report = (
+                        frame.groupby(group_cols, dropna=False, as_index=False)
+                        .agg(
+                            schools=("school_id", "nunique") if "school_id" in frame.columns else (group_cols[0], "size"),
+                            students=("total_students", "sum") if "total_students" in frame.columns else (group_cols[0], "size"),
+                            teacher_headcount=("teacher_headcount", "sum") if "teacher_headcount" in frame.columns else (group_cols[0], "size"),
+                            teacher_ftte=("teacher_ftte", "sum") if "teacher_ftte" in frame.columns else (group_cols[0], "size"),
+                        )
+                    )
+                else:
+                    report = pd.DataFrame([{
+                        "schools": int(frame["school_id"].nunique()) if "school_id" in frame.columns else len(frame),
+                        "students": float(frame["total_students"].fillna(0).sum()) if "total_students" in frame.columns else 0,
+                        "teacher_headcount": float(frame["teacher_headcount"].fillna(0).sum()) if "teacher_headcount" in frame.columns else 0,
+                        "teacher_ftte": float(frame["teacher_ftte"].fillna(0).sum()) if "teacher_ftte" in frame.columns else 0,
+                    }])
+
+                report["ptr_ftte"] = pd.NA
+                if "teacher_ftte" in report.columns and "students" in report.columns:
+                    valid_mask = pd.to_numeric(report["teacher_ftte"], errors="coerce").fillna(0) > 0
+                    report.loc[valid_mask, "ptr_ftte"] = (
+                        pd.to_numeric(report.loc[valid_mask, "students"], errors="coerce")
+                        / pd.to_numeric(report.loc[valid_mask, "teacher_ftte"], errors="coerce")
+                    )
+
+                report["students_per_school"] = pd.NA
+                if "schools" in report.columns and "students" in report.columns:
+                    school_mask = pd.to_numeric(report["schools"], errors="coerce").fillna(0) > 0
+                    report.loc[school_mask, "students_per_school"] = (
+                        pd.to_numeric(report.loc[school_mask, "students"], errors="coerce")
+                        / pd.to_numeric(report.loc[school_mask, "schools"], errors="coerce")
+                    )
+
+                return report
+
+            report_df = _build_report(report_base, selected_group_cols)
+
+            metric_col_order = [metric_options[m] for m in selected_metric_labels]
+            output_cols = selected_group_cols + metric_col_order
+            output_cols = [c for c in output_cols if c in report_df.columns]
+
+            final_report = report_df[output_cols].copy()
+
+            sort_metric = None
+            for candidate in ["students", "schools", "teacher_ftte", "teacher_headcount", "ptr_ftte", "students_per_school"]:
+                if candidate in final_report.columns:
+                    sort_metric = candidate
+                    break
+
+            if sort_metric is not None:
+                final_report = final_report.sort_values(sort_metric, ascending=False)
+
+            final_report = final_report.head(row_limit).copy()
+
+            rename_map = {
+                "regional_council": "Regional Council",
+                "territorial_authority": "Territorial Authority",
+                "school_type": "School Type",
+                "authority": "Authority",
+                "gender": "Gender",
+                "schools": "Schools",
+                "students": "Students",
+                "teacher_headcount": "Teacher Headcount",
+                "teacher_ftte": "Teacher FTTE",
+                "ptr_ftte": "PTR (FTTE)",
+                "students_per_school": "Students / School",
+            }
+            final_report = final_report.rename(columns=rename_map)
+
+            for col in ["Teacher FTTE", "PTR (FTTE)", "Students / School"]:
+                if col in final_report.columns:
+                    final_report[col] = pd.to_numeric(final_report[col], errors="coerce").round(2)
+
+            st.markdown("### Custom Report Output")
+            st.dataframe(final_report, use_container_width=True, hide_index=True)
+
+            report_csv = final_report.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download NZ analytics custom report (CSV)",
+                data=report_csv,
+                file_name="nz_analytics_custom_report.csv",
+                mime="text/csv",
+            )
+
+            st.markdown("### Filtered School Extract")
+
+            extract_cols = [
+                c for c in [
+                    "school_name",
+                    "regional_council",
+                    "territorial_authority",
+                    "school_type",
+                    "authority",
+                    "gender",
+                    "total_students",
+                    "teacher_headcount",
+                    "teacher_ftte",
+                    "ptr_ftte",
+                ] if c in report_base.columns
+            ]
+
+            extract_df = report_base[extract_cols].copy() if extract_cols else report_base.copy()
+
+            if "ptr_ftte" in extract_df.columns:
+                extract_df["ptr_ftte"] = pd.to_numeric(extract_df["ptr_ftte"], errors="coerce").round(2)
+            if "teacher_ftte" in extract_df.columns:
+                extract_df["teacher_ftte"] = pd.to_numeric(extract_df["teacher_ftte"], errors="coerce").round(2)
+
+            if "total_students" in extract_df.columns:
+                extract_df = extract_df.sort_values("total_students", ascending=False)
+
+            extract_df = extract_df.head(row_limit).copy()
+
+            st.dataframe(extract_df, use_container_width=True, hide_index=True)
+
+            extract_csv = extract_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download filtered NZ analytics school extract (custom reports CSV)",
+                data=extract_csv,
+                file_name="nz_analytics_custom_reports_filtered_school_extract.csv",
+                mime="text/csv",
+            )
 
     _render_source_links()
     _render_nz_footer()
