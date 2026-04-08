@@ -615,41 +615,11 @@ def render_uae_home():
     st.markdown("---")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # CHART 1: Enrollment by Emirate  (= India's "Top 10 States by School Count")
+    
     # ─────────────────────────────────────────────────────────────────────────
-    st.markdown("## 🏆 Enrollment by Emirate")
-    if emirate_col and enr_cnt_col:
-        df = _q(
-            f"SELECT {emirate_col} AS emirate, SUM({enr_cnt_col}) AS students "
-            f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{where} "
-            f"GROUP BY {emirate_col} ORDER BY students DESC",
-            [UAE_YEAR] + params
-        )
-        if not df.empty:
-            fig = px.bar(
-                df, x="emirate", y="students",
-                color="students", color_continuous_scale=[
-                    "#EAF4EA", "#006400"],
-                text="students",
-                labels={"emirate": "Emirate", "students": "Students"},
-            )
-            fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
-                              marker_line_color="white", marker_line_width=1.5)
-            fig.update_layout(
-                height=480, plot_bgcolor="white", paper_bgcolor="white",
-                font=dict(family="Segoe UI", size=11),
-                showlegend=False,
-                xaxis=dict(showgrid=False, title="", tickfont=dict(size=11), tickangle=-45),
-                yaxis=dict(showgrid=True, gridcolor="#F0F0F0", title="Students"),
-                margin=dict(l=70, r=50, t=50, b=150),
-                coloraxis_showscale=False
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
+    # CHART 1: Top Emirates by School Count
     # ─────────────────────────────────────────────────────────────────────────
-    # CHART 2: Schools by Emirate  (= India's "Top 20 States by Student Enrollment")
-    # ─────────────────────────────────────────────────────────────────────────
-    st.markdown("## 🏫 Schools by Emirate")
+    st.markdown("## 🏫 Top Emirates by School Count")
     if emirate_col and sch_cnt_col:
         sch_em_col = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
         if sch_em_col:
@@ -668,10 +638,16 @@ def render_uae_home():
                     text="schools",
                     labels={"emirate": "Emirate", "schools": "Schools"},
                 )
-                fig2.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
-                                   marker_line_color="white", marker_line_width=1.5)
+                fig2.update_traces(
+                    texttemplate="%{text:,.0f}",
+                    textposition="outside",
+                    marker_line_color="white",
+                    marker_line_width=1.5
+                )
                 fig2.update_layout(
-                    height=480, plot_bgcolor="white", paper_bgcolor="white",
+                    height=480,
+                    plot_bgcolor="white",
+                    paper_bgcolor="white",
                     font=dict(family="Segoe UI", size=11),
                     showlegend=False,
                     xaxis=dict(showgrid=False, title="", tickfont=dict(size=11), tickangle=-45),
@@ -682,7 +658,48 @@ def render_uae_home():
                 st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     # ─────────────────────────────────────────────────────────────────────────
-    
+    # CHART 2: Top Emirates by Student Enrollment
+    # ─────────────────────────────────────────────────────────────────────────
+    st.markdown("## 🏆 Top Emirates by Student Enrollment")
+    if emirate_col and enr_cnt_col:
+        df = _q(
+            f"SELECT {emirate_col} AS emirate, SUM({enr_cnt_col}) AS students "
+            f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{where} "
+            f"GROUP BY {emirate_col} ORDER BY students DESC",
+            [UAE_YEAR] + params
+        )
+        if not df.empty:
+            fig = px.bar(
+                df, x="emirate", y="students",
+                color="students",
+                color_continuous_scale=["#EAF4EA", "#006400"],
+                text="students",
+                labels={"emirate": "Emirate", "students": "Students"},
+            )
+            fig.update_traces(
+                texttemplate="%{text:,.0f}",
+                textposition="outside",
+                marker_line_color="white",
+                marker_line_width=1.5
+            )
+            fig.update_layout(
+                height=480,
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                font=dict(family="Segoe UI", size=11),
+                showlegend=False,
+                xaxis=dict(showgrid=False, title="", tickfont=dict(size=11), tickangle=-45),
+                yaxis=dict(showgrid=True, gridcolor="#F0F0F0", title="Students"),
+                margin=dict(l=70, r=50, t=50, b=150),
+                coloraxis_showscale=False
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # KEY INSIGHTS
+    # ─────────────────────────────────────────────────────────────────────────
+    st.markdown("## 💡 Key Insights")
+
     ins1, ins2, ins3 = st.columns(3)
     with ins1:
         st.info(f"""
@@ -709,9 +726,6 @@ On average, each UAE school serves
 reflecting the scale of UAE's education institutions.
         """)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # EXPLORE MORE navigation cards (mirrors India exactly)
-    # ─────────────────────────────────────────────────────────────────────────
     st.markdown("## 🧭 Explore More")
     nav1, nav2 = st.columns(2)
     with nav1:
