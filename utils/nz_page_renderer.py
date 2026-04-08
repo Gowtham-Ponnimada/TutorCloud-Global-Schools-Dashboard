@@ -412,345 +412,278 @@ def render_nz_home() -> None:
 def render_nz_state_dashboard() -> None:
     inject_professional_css()
 
-    st.markdown(
-        """
-        <div class="main-header">
-            <h1>📊 New Zealand State Dashboard</h1>
-            <p>Regional council and territorial authority drilldowns for schools, students, and teacher metrics across New Zealand.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("# 📊 State Dashboard")
+    st.markdown("**Regional Education Overview - New Zealand**")
 
     bundle = _load_nz_state_school_frame()
     if not bundle.get("ok", False):
-        st.error("NZ state dashboard data could not be loaded. Check the processed NZ files.")
+        st.error("NZ state dashboard data could not be loaded.")
         _render_nz_footer()
         return
 
     df = bundle.get("df", pd.DataFrame()).copy()
-    teacher_year = bundle.get("teacher_year")
-    roll_year = bundle.get("roll_year", 2025)
-
     if df.empty:
-        st.warning("NZ state dashboard data frame is empty.")
+        st.warning("No NZ state dashboard data is available.")
         _render_nz_footer()
         return
 
-    for col in ["school_id", "total_students", "teacher_headcount", "teacher_ftte", "ptr_ftte"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    for col in ["regional_council", "territorial_authority", "school_type", "authority", "gender", "school_name"]:
+    for col in [
+        "regional_council", "territorial_authority", "sa2_name", "urban_rural",
+        "school_type", "authority", "gender", "education_region", "school_name"
+    ]:
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str).str.strip()
 
-    st.caption(
-        f"Students use {roll_year} school rolls. Teacher metrics use the latest teacher dataset available in the processed NZ bundle "
-        f"({teacher_year} where available). PTR values are FTTE-overlap based."
-    )
+    for col in ["school_id", "total_students", "teacher_headcount", "teacher_ftte"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # -------------------------
-    # Filters
+    # Sidebar filters (India-style structure: 8 controls)
     # -------------------------
-    f1, f2, f3, f4, f5 = st.columns(5)
+    st.sidebar.markdown("## Filters")
 
-    region_options = ["All"] + sorted([x for x in df["regional_council"].dropna().astype(str).unique().tolist() if x])
-    selected_region = f1.selectbox("Regional Council", region_options, index=0, key="nz_state_region_filter")
+    region_options = ["All"] + sorted([x for x in df.get("regional_council", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_region = st.sidebar.selectbox("🗺️ Select Regional Council", region_options, index=0, key="nz_state_region")
 
-    ta_base = df.copy()
-    if selected_region != "All":
-        ta_base = ta_base[ta_base["regional_council"] == selected_region]
+    district_base = df.copy()
+    if selected_region != "All" and "regional_council" in district_base.columns:
+        district_base = district_base[district_base["regional_council"] == selected_region]
 
-    ta_options = ["All"] + sorted([x for x in ta_base["territorial_authority"].dropna().astype(str).unique().tolist() if x])
-    selected_ta = f2.selectbox("Territorial Authority", ta_options, index=0, key="nz_state_ta_filter")
+    ta_options = ["All"] + sorted([x for x in district_base.get("territorial_authority", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_ta = st.sidebar.selectbox("🏘️ Select Territorial Authority", ta_options, index=0, key="nz_state_ta")
 
-    type_options = ["All"] + sorted([x for x in df["school_type"].dropna().astype(str).unique().tolist() if x])
-    selected_type = f3.selectbox("School Type", type_options, index=0, key="nz_state_type_filter")
+    block_base = district_base.copy()
+    if selected_ta != "All" and "territorial_authority" in block_base.columns:
+        block_base = block_base[block_base["territorial_authority"] == selected_ta]
 
-    authority_options = ["All"] + sorted([x for x in df["authority"].dropna().astype(str).unique().tolist() if x])
-    selected_authority = f4.selectbox("Authority", authority_options, index=0, key="nz_state_authority_filter")
+    sa2_options = ["All"] + sorted([x for x in block_base.get("sa2_name", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_sa2 = st.sidebar.selectbox("📍 Select SA2", sa2_options, index=0, key="nz_state_sa2")
 
-    gender_options = ["All"] + sorted([x for x in df["gender"].dropna().astype(str).unique().tolist() if x])
-    selected_gender = f5.selectbox("Gender", gender_options, index=0, key="nz_state_gender_filter")
+    urban_options = ["All"] + sorted([x for x in df.get("urban_rural", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_urban = st.sidebar.selectbox("🌆 Location", urban_options, index=0, key="nz_state_urban")
+
+    school_type_options = ["All"] + sorted([x for x in df.get("school_type", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_school_type = st.sidebar.selectbox("📖 School Type", school_type_options, index=0, key="nz_state_school_type")
+
+    authority_options = ["All"] + sorted([x for x in df.get("authority", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_authority = st.sidebar.selectbox("🏛️ Management Type", authority_options, index=0, key="nz_state_authority")
+
+    gender_options = ["All"] + sorted([x for x in df.get("gender", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_gender = st.sidebar.selectbox("👥 Gender", gender_options, index=0, key="nz_state_gender")
+
+    education_region_options = ["All"] + sorted([x for x in df.get("education_region", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x])
+    selected_education_region = st.sidebar.selectbox("🧭 Education Region", education_region_options, index=0, key="nz_state_education_region")
 
     filtered = df.copy()
-    if selected_region != "All":
+    if selected_region != "All" and "regional_council" in filtered.columns:
         filtered = filtered[filtered["regional_council"] == selected_region]
-    if selected_ta != "All":
+    if selected_ta != "All" and "territorial_authority" in filtered.columns:
         filtered = filtered[filtered["territorial_authority"] == selected_ta]
-    if selected_type != "All":
-        filtered = filtered[filtered["school_type"] == selected_type]
-    if selected_authority != "All":
+    if selected_sa2 != "All" and "sa2_name" in filtered.columns:
+        filtered = filtered[filtered["sa2_name"] == selected_sa2]
+    if selected_urban != "All" and "urban_rural" in filtered.columns:
+        filtered = filtered[filtered["urban_rural"] == selected_urban]
+    if selected_school_type != "All" and "school_type" in filtered.columns:
+        filtered = filtered[filtered["school_type"] == selected_school_type]
+    if selected_authority != "All" and "authority" in filtered.columns:
         filtered = filtered[filtered["authority"] == selected_authority]
-    if selected_gender != "All":
+    if selected_gender != "All" and "gender" in filtered.columns:
         filtered = filtered[filtered["gender"] == selected_gender]
+    if selected_education_region != "All" and "education_region" in filtered.columns:
+        filtered = filtered[filtered["education_region"] == selected_education_region]
 
     # -------------------------
-    # Active Filters
+    # Sidebar active filters (India-like behavior)
     # -------------------------
     active_filters = []
     if selected_region != "All":
         active_filters.append(f"Regional Council: {selected_region}")
     if selected_ta != "All":
         active_filters.append(f"Territorial Authority: {selected_ta}")
-    if selected_type != "All":
-        active_filters.append(f"School Type: {selected_type}")
+    if selected_sa2 != "All":
+        active_filters.append(f"SA2: {selected_sa2}")
+    if selected_urban != "All":
+        active_filters.append(f"Location: {selected_urban}")
+    if selected_school_type != "All":
+        active_filters.append(f"School Type: {selected_school_type}")
     if selected_authority != "All":
-        active_filters.append(f"Authority: {selected_authority}")
+        active_filters.append(f"Management Type: {selected_authority}")
     if selected_gender != "All":
         active_filters.append(f"Gender: {selected_gender}")
+    if selected_education_region != "All":
+        active_filters.append(f"Education Region: {selected_education_region}")
 
     if active_filters:
-        st.markdown("### ✅ Active Filters")
-        af_cols = st.columns(min(3, len(active_filters)))
-        for idx, label in enumerate(active_filters):
-            af_cols[idx % len(af_cols)].markdown(
-                f"""
-                <div style="background:#f8fafc;border:1px solid #dbeafe;border-radius:12px;padding:10px 12px;margin-bottom:8px;">
-                    <div style="font-size:0.92rem;color:#1f2937;font-weight:600;">{label}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        st.sidebar.markdown("### Active Filters")
+        for item in active_filters:
+            st.sidebar.markdown(f"- {item}")
 
     # -------------------------
-    # KPI calculations
+    # KPI cards (6 only, India-like)
     # -------------------------
-    total_regions = int(filtered["regional_council"].nunique()) if "regional_council" in filtered.columns else 0
-    total_tas = int(filtered["territorial_authority"].nunique()) if "territorial_authority" in filtered.columns else 0
     total_schools = int(filtered["school_id"].nunique()) if "school_id" in filtered.columns else len(filtered)
-    total_students = float(filtered["total_students"].fillna(0).sum()) if "total_students" in filtered.columns else 0
-    total_teacher_ftte = float(filtered["teacher_ftte"].fillna(0).sum()) if "teacher_ftte" in filtered.columns else 0
-    total_teacher_headcount = float(filtered["teacher_headcount"].fillna(0).sum()) if "teacher_headcount" in filtered.columns else 0
-    schools_with_teacher_data = int(filtered.loc[filtered["teacher_ftte"].fillna(0) > 0, "school_id"].nunique()) if {"teacher_ftte", "school_id"}.issubset(filtered.columns) else 0
-    ptr_ftte = (total_students / total_teacher_ftte) if total_teacher_ftte > 0 else None
-    students_per_school = (total_students / total_schools) if total_schools > 0 else None
+    schools_with_enrollment = int(filtered.loc[pd.to_numeric(filtered.get("total_students", 0), errors="coerce").fillna(0) > 0, "school_id"].nunique()) if "school_id" in filtered.columns and "total_students" in filtered.columns else 0
+    total_tas = int(filtered["territorial_authority"].nunique()) if "territorial_authority" in filtered.columns else 0
+    total_students = float(pd.to_numeric(filtered.get("total_students", 0), errors="coerce").fillna(0).sum()) if "total_students" in filtered.columns else 0
+    total_teachers = float(pd.to_numeric(filtered.get("teacher_headcount", 0), errors="coerce").fillna(0).sum()) if "teacher_headcount" in filtered.columns else 0
+    ptr_value = (total_students / total_teachers) if total_teachers > 0 else None
 
     st.markdown("## 📊 Overview")
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    k1.metric("REGIONS", _fmt_int(total_regions))
-    k2.metric("TERRITORIAL AUTHORITIES", _fmt_int(total_tas))
-    k3.metric("SCHOOLS", _fmt_int(total_schools))
-    k4.metric("STUDENTS", _fmt_int(total_students))
-    k5.metric("TEACHER FTTE", _fmt_float(total_teacher_ftte, 2))
-    k6.metric("PTR (FTTE)", _fmt_float(ptr_ftte, 2) if ptr_ftte is not None else "N/A")
+    c1, c2, c3 = st.columns(3)
+    c4, c5, c6 = st.columns(3)
 
-    k7, k8, k9 = st.columns(3)
-    k7.metric("TEACHER HEADCOUNT", _fmt_int(total_teacher_headcount))
-    k8.metric("STUDENTS / SCHOOL", _fmt_float(students_per_school, 1) if students_per_school is not None else "N/A")
-    k9.metric("SCHOOLS WITH TEACHER DATA", _fmt_int(schools_with_teacher_data))
+    c1.metric("🏫 Total Schools", _fmt_int(total_schools))
+    c2.metric("🎓 Schools with Enrollment", _fmt_int(schools_with_enrollment))
+    c3.metric("🗺️ Territorial Authorities", _fmt_int(total_tas))
+    c4.metric("📊 PTR", _fmt_float(ptr_value, 2) if ptr_value is not None else "N/A")
+    c5.metric("👥 Total Students", _fmt_int(total_students))
+    c6.metric("👨‍🏫 Total Teachers", _fmt_int(total_teachers))
 
     # -------------------------
-    # Territorial Authority summary
+    # Enrollment analysis (India slot equivalent)
     # -------------------------
+    st.markdown("## 📚 Enrollment Analysis")
+
+    enrollment_df = pd.DataFrame()
+    if not filtered.empty and {"school_type", "gender", "total_students"}.issubset(filtered.columns):
+        enrollment_df = (
+            filtered.groupby(["school_type", "gender"], dropna=False, as_index=False)
+            .agg(total_students=("total_students", "sum"))
+        )
+
+    if not enrollment_df.empty:
+        fig_enrollment = px.bar(
+            enrollment_df,
+            x="school_type",
+            y="total_students",
+            color="gender",
+            barmode="group",
+            title="Enrollment by School Type and Gender",
+            labels={
+                "school_type": "School Type",
+                "total_students": "Total Students",
+                "gender": "Gender",
+            },
+        )
+        fig_enrollment.update_layout(height=450)
+        st.plotly_chart(fig_enrollment, use_container_width=True)
+    else:
+        st.info("Enrollment analysis is not available for the current selection.")
+
+    # -------------------------
+    # Territorial Authority PTR Analysis (India district equivalent)
+    # -------------------------
+    st.markdown("## 📍 Territorial Authority PTR Analysis")
+
     ta_summary = pd.DataFrame()
     if not filtered.empty and "territorial_authority" in filtered.columns:
         ta_summary = (
-            filtered.groupby(["regional_council", "territorial_authority"], dropna=False, as_index=False)
+            filtered.groupby("territorial_authority", dropna=False, as_index=False)
             .agg(
-                schools=("school_id", "nunique"),
+                total_schools=("school_id", "nunique"),
                 total_students=("total_students", "sum"),
-                teacher_headcount=("teacher_headcount", "sum"),
-                teacher_ftte=("teacher_ftte", "sum"),
+                total_teachers=("teacher_headcount", "sum"),
             )
         )
-        ta_summary["ptr_ftte"] = pd.NA
-        valid_ptr = pd.to_numeric(ta_summary["teacher_ftte"], errors="coerce").fillna(0) > 0
-        ta_summary.loc[valid_ptr, "ptr_ftte"] = (
-            pd.to_numeric(ta_summary.loc[valid_ptr, "total_students"], errors="coerce")
-            / pd.to_numeric(ta_summary.loc[valid_ptr, "teacher_ftte"], errors="coerce")
+        ta_summary["ptr"] = pd.NA
+        valid_ta = pd.to_numeric(ta_summary["total_teachers"], errors="coerce").fillna(0) > 0
+        ta_summary.loc[valid_ta, "ptr"] = (
+            pd.to_numeric(ta_summary.loc[valid_ta, "total_students"], errors="coerce")
+            / pd.to_numeric(ta_summary.loc[valid_ta, "total_teachers"], errors="coerce")
         )
-        ta_summary["students_per_school"] = pd.NA
-        valid_sps = pd.to_numeric(ta_summary["schools"], errors="coerce").fillna(0) > 0
-        ta_summary.loc[valid_sps, "students_per_school"] = (
-            pd.to_numeric(ta_summary.loc[valid_sps, "total_students"], errors="coerce")
-            / pd.to_numeric(ta_summary.loc[valid_sps, "schools"], errors="coerce")
-        )
-        ta_summary = ta_summary.sort_values("total_students", ascending=False)
-
-    # -------------------------
-    # School type summary
-    # -------------------------
-    school_type_summary = pd.DataFrame()
-    if not filtered.empty and "school_type" in filtered.columns:
-        school_type_summary = (
-            filtered.groupby("school_type", dropna=False, as_index=False)
-            .agg(
-                schools=("school_id", "nunique"),
-                total_students=("total_students", "sum"),
-                teacher_ftte=("teacher_ftte", "sum"),
-            )
-            .sort_values("total_students", ascending=False)
-        )
-
-    # -------------------------
-    # Authority summary
-    # -------------------------
-    authority_summary = pd.DataFrame()
-    if not filtered.empty and "authority" in filtered.columns:
-        authority_summary = (
-            filtered.groupby("authority", dropna=False, as_index=False)
-            .agg(
-                schools=("school_id", "nunique"),
-                total_students=("total_students", "sum"),
-                teacher_headcount=("teacher_headcount", "sum"),
-                teacher_ftte=("teacher_ftte", "sum"),
-            )
-            .sort_values("teacher_ftte", ascending=False)
-        )
-
-    # -------------------------
-    # Charts
-    # -------------------------
-    c1, c2 = st.columns(2)
+        ta_summary = ta_summary.sort_values("total_schools", ascending=False).head(20)
 
     if not ta_summary.empty:
-        ta_top = ta_summary.head(15).copy()
-        fig_ta_students = px.bar(
-            ta_top,
-            x="total_students",
-            y="territorial_authority",
-            orientation="h",
-            color="regional_council",
-            title="Top Territorial Authorities in Current Selection",
-            labels={"total_students": "Students", "territorial_authority": "Territorial Authority"},
+        fig_ta = px.bar(
+            ta_summary,
+            x="territorial_authority",
+            y="ptr",
+            title="Top 20 Territorial Authorities by School Count",
+            hover_data=["total_schools", "total_students", "total_teachers"],
+            labels={
+                "territorial_authority": "Territorial Authority",
+                "ptr": "PTR",
+                "total_schools": "Total Schools",
+                "total_students": "Total Students",
+                "total_teachers": "Total Teachers",
+            },
         )
-        fig_ta_students.update_layout(height=460, yaxis={"categoryorder": "total ascending"})
-        c1.plotly_chart(fig_ta_students, use_container_width=True)
-    else:
-        c1.info("No territorial authority student summary is available for the current selection.")
+        fig_ta.update_layout(height=450, xaxis_tickangle=-45)
+        st.plotly_chart(fig_ta, use_container_width=True)
 
-    if not school_type_summary.empty:
-        fig_school_type = px.bar(
-            school_type_summary,
-            x="school_type",
-            y="total_students",
-            color="schools",
-            title="Student Distribution by School Type",
-            labels={"school_type": "School Type", "total_students": "Students", "schools": "Schools"},
-        )
-        fig_school_type.update_layout(height=460)
-        c2.plotly_chart(fig_school_type, use_container_width=True)
-    else:
-        c2.info("No school-type summary is available for the current selection.")
-
-    c3, c4 = st.columns(2)
-
-    if not ta_summary.empty:
-        ptr_df = ta_summary.copy()
-        ptr_df["ptr_ftte"] = pd.to_numeric(ptr_df["ptr_ftte"], errors="coerce")
-        ptr_df = ptr_df.dropna(subset=["ptr_ftte"]).sort_values("ptr_ftte", ascending=False).head(15)
-        if not ptr_df.empty:
-            fig_ptr = px.bar(
-                ptr_df,
-                x="ptr_ftte",
-                y="territorial_authority",
-                orientation="h",
-                color="teacher_ftte",
-                title="PTR (FTTE) by Territorial Authority",
-                labels={"ptr_ftte": "PTR (FTTE)", "territorial_authority": "Territorial Authority", "teacher_ftte": "Teacher FTTE"},
-            )
-            fig_ptr.update_layout(height=460, yaxis={"categoryorder": "total ascending"})
-            c3.plotly_chart(fig_ptr, use_container_width=True)
-        else:
-            c3.info("No territorial-authority PTR values are available for the current selection.")
-    else:
-        c3.info("No territorial-authority PTR summary is available for the current selection.")
-
-    if not authority_summary.empty:
-        fig_auth = px.bar(
-            authority_summary,
-            x="authority",
-            y="teacher_ftte",
-            color="total_students",
-            title="Teacher FTTE by Authority",
-            labels={"authority": "Authority", "teacher_ftte": "Teacher FTTE", "total_students": "Students"},
-        )
-        fig_auth.update_layout(height=460)
-        c4.plotly_chart(fig_auth, use_container_width=True)
-    else:
-        c4.info("No authority summary is available for the current selection.")
-
-    # -------------------------
-    # Summary tables
-    # -------------------------
-    st.markdown("### Territorial Authority Summary")
-    if not ta_summary.empty:
         ta_display = ta_summary.copy()
-        for col in ["teacher_ftte", "ptr_ftte", "students_per_school"]:
-            if col in ta_display.columns:
-                ta_display[col] = pd.to_numeric(ta_display[col], errors="coerce").round(2)
+        if "ptr" in ta_display.columns:
+            ta_display["ptr"] = pd.to_numeric(ta_display["ptr"], errors="coerce").round(2)
         st.dataframe(ta_display, use_container_width=True, hide_index=True)
 
-        ta_csv = ta_display.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 Download territorial authority summary (CSV)",
-            data=ta_csv,
-            file_name="nz_state_dashboard_ta_summary.csv",
+            label="📥 Download Territorial Authority Data (CSV)",
+            data=ta_display.to_csv(index=False).encode("utf-8"),
+            file_name="nz_state_dashboard_ta_data.csv",
             mime="text/csv",
         )
     else:
-        st.info("No territorial authority summary table is available for the current selection.")
+        st.info("Territorial Authority PTR analysis is not available for the current selection.")
 
-    st.markdown("### Authority Summary")
-    if not authority_summary.empty:
-        auth_display = authority_summary.copy()
-        if "teacher_ftte" in auth_display.columns:
-            auth_display["teacher_ftte"] = pd.to_numeric(auth_display["teacher_ftte"], errors="coerce").round(2)
-        st.dataframe(auth_display, use_container_width=True, hide_index=True)
-    else:
-        st.info("No authority summary table is available for the current selection.")
+    # -------------------------
+    # SA2 PTR Analysis (India block/taluk equivalent)
+    # -------------------------
+    st.markdown("## 🏘️ SA2 PTR Analysis")
 
-    if not school_type_summary.empty:
-        school_type_csv = school_type_summary.to_csv(index=False).encode("utf-8")
+    sa2_summary = pd.DataFrame()
+    if selected_ta != "All" and not filtered.empty and "sa2_name" in filtered.columns:
+        sa2_summary = (
+            filtered.groupby("sa2_name", dropna=False, as_index=False)
+            .agg(
+                total_schools=("school_id", "nunique"),
+                total_students=("total_students", "sum"),
+                total_teachers=("teacher_headcount", "sum"),
+            )
+        )
+        sa2_summary["ptr"] = pd.NA
+        valid_sa2 = pd.to_numeric(sa2_summary["total_teachers"], errors="coerce").fillna(0) > 0
+        sa2_summary.loc[valid_sa2, "ptr"] = (
+            pd.to_numeric(sa2_summary.loc[valid_sa2, "total_students"], errors="coerce")
+            / pd.to_numeric(sa2_summary.loc[valid_sa2, "total_teachers"], errors="coerce")
+        )
+        sa2_summary = sa2_summary.sort_values("total_schools", ascending=False).head(20)
+
+    if selected_ta == "All":
+        st.info("Select a Territorial Authority to view SA2-level PTR analysis.")
+    elif not sa2_summary.empty:
+        fig_sa2 = px.bar(
+            sa2_summary,
+            x="sa2_name",
+            y="ptr",
+            title=f"Top 20 SA2 Areas in {selected_ta} by School Count",
+            hover_data=["total_schools", "total_students", "total_teachers"],
+            labels={
+                "sa2_name": "SA2",
+                "ptr": "PTR",
+                "total_schools": "Total Schools",
+                "total_students": "Total Students",
+                "total_teachers": "Total Teachers",
+            },
+        )
+        fig_sa2.update_layout(height=450, xaxis_tickangle=-45)
+        st.plotly_chart(fig_sa2, use_container_width=True)
+
+        sa2_display = sa2_summary.copy()
+        if "ptr" in sa2_display.columns:
+            sa2_display["ptr"] = pd.to_numeric(sa2_display["ptr"], errors="coerce").round(2)
+        st.dataframe(sa2_display, use_container_width=True, hide_index=True)
+
         st.download_button(
-            label="📥 Download school type summary (CSV)",
-            data=school_type_csv,
-            file_name="nz_state_dashboard_school_type_summary.csv",
+            label="📥 Download SA2 Data (CSV)",
+            data=sa2_display.to_csv(index=False).encode("utf-8"),
+            file_name="nz_state_dashboard_sa2_data.csv",
             mime="text/csv",
         )
-
-    # -------------------------
-    # School detail table
-    # -------------------------
-    st.markdown("### School Detail")
-    detail_cols = [
-        c for c in [
-            "school_name",
-            "regional_council",
-            "territorial_authority",
-            "school_type",
-            "authority",
-            "gender",
-            "total_students",
-            "teacher_headcount",
-            "teacher_ftte",
-            "ptr_ftte",
-        ] if c in filtered.columns
-    ]
-    detail_df = filtered[detail_cols].copy() if detail_cols else filtered.copy()
-
-    if "ptr_ftte" in detail_df.columns:
-        detail_df["ptr_ftte"] = pd.to_numeric(detail_df["ptr_ftte"], errors="coerce").round(2)
-    if "teacher_ftte" in detail_df.columns:
-        detail_df["teacher_ftte"] = pd.to_numeric(detail_df["teacher_ftte"], errors="coerce").round(2)
-    if "total_students" in detail_df.columns:
-        detail_df = detail_df.sort_values("total_students", ascending=False)
-
-    st.dataframe(detail_df, use_container_width=True, hide_index=True)
-
-    school_csv = detail_df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="📥 Download filtered NZ state dashboard data (CSV)",
-        data=school_csv,
-        file_name="nz_state_dashboard_filtered.csv",
-        mime="text/csv",
-    )
+    else:
+        st.info("SA2-level PTR analysis is not available for the current selection.")
 
     _render_nz_footer()
-
-
 
 @st.cache_data(show_spinner=False)
 def _load_nz_analytics_school_frame():
