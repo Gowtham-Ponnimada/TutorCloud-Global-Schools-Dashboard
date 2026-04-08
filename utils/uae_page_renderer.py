@@ -1088,8 +1088,111 @@ def render_uae_state_dashboard():
         st.info("District-level PTR analysis is not available for the current selection.")
 
     # India-equivalent conditional lower-level section
-    st.markdown("## 🏘️ Lower-Level Analysis")
-    st.info("A UAE block-equivalent drilldown is not yet exposed in the current renderer. This section is reserved for parity completion.")
+    if overview_title not in [None, "", "All", "UAE"]:
+        st.markdown(f"## 🏘️ Curriculum-Level Analysis: {overview_title}")
+
+        lower_src = _uae_school_directory_summary(filters)
+        curriculum_col = _pick_col(lower_src, "curriculum", "Curriculum")
+        schools_col = _pick_col(lower_src, "total_schools", "Total Schools")
+        emirate_col_lower = _pick_col(lower_src, "emirate", "Emirate", "District")
+
+        if lower_src is not None and not lower_src.empty and curriculum_col and schools_col:
+            working = lower_src.copy()
+
+            if emirate_col_lower and emirate_col_lower in working.columns:
+                working = working[working[emirate_col_lower].astype(str) == str(overview_title)]
+
+            if working.empty:
+                st.info("No curriculum-level data available for the selected filters.")
+            else:
+                lower_df = (
+                    working.groupby(curriculum_col, dropna=False)[schools_col]
+                    .sum()
+                    .reset_index()
+                )
+                lower_df.columns = ["Curriculum", "Total Schools"]
+                lower_df["Curriculum"] = lower_df["Curriculum"].astype(str)
+                lower_df["Total Schools"] = pd.to_numeric(lower_df["Total Schools"], errors="coerce").fillna(0)
+
+                total_students = []
+                total_teachers = []
+
+                for curriculum_name in lower_df["Curriculum"]:
+                    try:
+                        kpi = _mv_curriculum_kpi(UAE_YEAR, curriculum_name, emirate_val=overview_title)
+                    except Exception:
+                        kpi = {}
+
+                    students = (
+                        kpi.get("total_students",
+                        kpi.get("students",
+                        kpi.get("student_count",
+                        kpi.get("enrollment", 0))))
+                    )
+                    teachers = (
+                        kpi.get("total_teachers",
+                        kpi.get("teachers",
+                        kpi.get("teacher_count", 0)))
+                    )
+
+                    try:
+                        students = float(students or 0)
+                    except Exception:
+                        students = 0.0
+
+                    try:
+                        teachers = float(teachers or 0)
+                    except Exception:
+                        teachers = 0.0
+
+                    total_students.append(students)
+                    total_teachers.append(teachers)
+
+                lower_df["Total Students"] = total_students
+                lower_df["Total Teachers"] = total_teachers
+                lower_df["PTR"] = lower_df.apply(
+                    lambda r: round(r["Total Students"] / r["Total Teachers"], 2) if r["Total Teachers"] else None,
+                    axis=1
+                )
+
+                display_lower_df = lower_df[["Curriculum", "Total Schools", "Total Students", "Total Teachers", "PTR"]].copy()
+                st.dataframe(display_lower_df, use_container_width=True, hide_index=True)
+
+                chart_df = display_lower_df.dropna(subset=["PTR"]).copy()
+                chart_df = chart_df.sort_values(["Total Schools", "PTR"], ascending=[False, False])
+
+                if len(chart_df) > 1:
+                    fig_lower = px.bar(
+                        chart_df.head(20),
+                        x="Curriculum",
+                        y="PTR",
+                        title=f"Curriculum PTR Comparison in {overview_title} (Top 20 by School Count)",
+                        labels={"Curriculum": "Curriculum", "PTR": "Pupil-Teacher Ratio"},
+                        color="PTR",
+                        color_continuous_scale="RdYlGn_r",
+                        hover_data={"PTR": False}
+                    )
+                    fig_lower.update_layout(
+                        xaxis_tickangle=-45,
+                        margin=dict(l=60, r=40, t=80, b=120),
+                        plot_bgcolor="white",
+                        paper_bgcolor="white"
+                    )
+                    st.plotly_chart(fig_lower, use_container_width=True, config={"displayModeBar": False})
+
+                csv_lower = display_lower_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Curriculum Data (CSV)",
+                    data=csv_lower,
+                    file_name=f"curriculum_analysis_{str(overview_title).lower().replace(' ', '_')}.csv",
+                    mime="text/csv",
+                    key="download_curriculum"
+                )
+        else:
+            st.info("No curriculum-level data available for the selected filters.")
+    else:
+        st.markdown("## 🏘️ Curriculum-Level Analysis")
+        st.info("Select a specific Emirate to view curriculum-level analysis.")
 
     _render_footer()
 
