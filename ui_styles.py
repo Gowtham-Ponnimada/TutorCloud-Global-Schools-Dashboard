@@ -595,9 +595,8 @@ def render_region_badge():
     # widget calls are possible.  The previous bare `except Exception:` was
     # silently swallowing real errors (e.g. on tab-switch reruns), causing the
     # selector to disappear.  Removed in v_fix5 – render unconditionally.
-    _selector_rendered = st.session_state.get("_region_selector_rendered", False)
-    if not _selector_rendered:
-        with st.sidebar:
+    _chosen = _cur
+    with st.sidebar:
             st.markdown(
                 '<style>'
                 'div[data-testid="stSidebar"] .tc-region-block {'
@@ -623,7 +622,6 @@ def render_region_badge():
                 key='tc_region_selector',
                 label_visibility='collapsed',
             )
-            st.session_state["_region_selector_rendered"] = True
 
     # -- 4. On change: Python-side query_params write + forced rerun -----
     if _chosen != _cur:
