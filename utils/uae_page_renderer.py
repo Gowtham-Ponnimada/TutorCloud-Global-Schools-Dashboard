@@ -515,11 +515,8 @@ def render_uae_home():
     st.markdown(UAE_CSS, unsafe_allow_html=True)
 
     # ── Header (matches India: main-header + sub-header) ──────────────────────
-    st.markdown('<div class="main-header">TutorCloud Global Dashboard</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sub-header">National K-12 Education Overview - UAE</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown("# 🏠 TutorCloud Global Dashboard")
+    st.markdown("**National K-12 Education Overview - UAE 2024-2025**")
     st.markdown("---")
 
     # No sidebar filters on Home page (matches India Home)
@@ -685,8 +682,7 @@ def render_uae_home():
                 st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     # ─────────────────────────────────────────────────────────────────────────
-    #     st.markdown("## 💡 Key Insights")
-
+    
     ins1, ins2, ins3 = st.columns(3)
     with ins1:
         st.info(f"""
@@ -764,12 +760,10 @@ Interactive analytics with geographic maps and custom reports.
 """, unsafe_allow_html=True)
 
     # Footer
-    st.markdown("---")
+    st.markdown('---')
     st.markdown(
-        "<div style='text-align:center;color:#757575;font-size:.85rem;'>"
-        "<strong>TutorCloud Global Dashboard</strong><br>"
-        "© 2026 TutorCloud. All rights reserved.</div>",
-        unsafe_allow_html=True
+        "<div style='text-align: center; color: #757575; font-size: clamp(0.8rem, 2vw, 0.9rem);'><p><strong>TutorCloud Global Dashboard</strong></p><p>© 2026 TutorCloud. All rights reserved.</p></div>",
+        unsafe_allow_html=True,
     )
 
 
