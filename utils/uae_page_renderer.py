@@ -1584,32 +1584,318 @@ def _uae_tab_demographics(filters):
 # 3. ANALYTICS PAGE  ── mirrors India Analytics page exactly
 # ══════════════════════════════════════════════════════════════════════════════
 
-def render_uae_analytics():
-    if _inject_css:
-        _inject_css()
-    st.markdown(UAE_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Advanced Educational Analytics - UAE</div>', unsafe_allow_html=True)
 
-    filters = {}
+def render_uae_analytics():
+    from io import BytesIO
+
+    _inject_css()
+    st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
+
+    base_filters = _build_sidebar_filters()
+
+    enr_cols = _tbl_cols('uae_fact_enrollment')
+    sch_cols = _tbl_cols('uae_fact_schools')
+    emirate_col = _pick_col(enr_cols, 'region_en', 'emirate', 'emirate_en', 'region')
+    curriculum_col = _pick_col(sch_cols, 'curriculum_en', 'curriculum', 'curriculum_type')
+
+    def _clone_filters():
+        out = {}
+        for k, v in (base_filters or {}).items():
+            out[k] = v.copy() if isinstance(v, dict) else v
+        return out
+
+    def _options(table_name, col_name):
+        if not col_name:
+            return ['All']
+        try:
+            vals = _distinct(table_name, col_name)
+        except Exception:
+            vals = []
+        clean = [str(v) for v in vals if v not in (None, '', 'All')]
+        return ['All'] + sorted(clean)
+
+    emirate_options = _options('uae_fact_enrollment', emirate_col)
+    curriculum_options = _options('uae_fact_schools', curriculum_col)
+
+    def _apply_scope(filters=None, emirate='All', curriculum='All'):
+        scoped = _clone_filters() if filters is None else filters
+        if emirate not in (None, '', 'All') and emirate_col:
+            scoped['state'] = {'col': emirate_col, 'val': emirate}
+        if curriculum not in (None, '', 'All') and curriculum_col:
+            scoped['district'] = {'col': curriculum_col, 'val': curriculum, 'apply_to': ['uae_fact_schools']}
+        return scoped
+
+    def _safe_series(df, *candidates):
+        col = _pick_col(df, *candidates)
+        if col and col in df.columns:
+            return df[col]
+        return pd.Series([None] * len(df))
+
+    def _as_float(value):
+        try:
+            return float(str(value).replace(',', '').strip())
+        except Exception:
+            return 0.0
+
+    def _emirate_frame(local_filters):
+        src = _uae_emirate_analysis(local_filters)
+        if src is None or src.empty:
+            return pd.DataFrame(columns=['Location', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR', 'Students per School', 'Teachers per School'])
+
+        out = pd.DataFrame()
+        out['Location'] = _safe_series(src, 'emirate', 'region_en', 'emirate_en').astype(str)
+        out['Total Schools'] = pd.to_numeric(_safe_series(src, 'total_schools', 'schools'), errors='coerce').fillna(0)
+        out['Total Students'] = pd.to_numeric(_safe_series(src, 'total_students', 'students'), errors='coerce').fillna(0)
+        out['Total Teachers'] = pd.to_numeric(_safe_series(src, 'total_teachers', 'teachers'), errors='coerce').fillna(0)
+        out['PTR'] = pd.to_numeric(_safe_series(src, 'ptr_ratio', 'PTR', 'ptr'), errors='coerce')
+        out['Students per School'] = out.apply(lambda r: (r['Total Students'] / r['Total Schools']) if r['Total Schools'] else None, axis=1)
+        out['Teachers per School'] = out.apply(lambda r: (r['Total Teachers'] / r['Total Schools']) if r['Total Schools'] else None, axis=1)
+        out = out.dropna(subset=['Location'])
+        return out.sort_values(['Total Students', 'Total Schools'], ascending=[False, False]).reset_index(drop=True)
+
+    def _curriculum_frame(local_filters):
+        src = _uae_school_directory_summary(local_filters)
+        if src is None or src.empty:
+            return pd.DataFrame(columns=['Location', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR', 'Students per School', 'Teachers per School'])
+
+        group_col = _pick_col(src, 'curriculum', 'Curriculum')
+        schools_col = _pick_col(src, 'total_schools', 'Total Schools')
+        if not group_col or not schools_col:
+            return pd.DataFrame(columns=['Location', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR', 'Students per School', 'Teachers per School'])
+
+        out = src.groupby(group_col, dropna=False)[schools_col].sum().reset_index()
+        out = out.rename(columns={group_col: 'Location', schools_col: 'Total Schools'})
+        out['Location'] = out['Location'].astype(str)
+        out['Total Schools'] = pd.to_numeric(out['Total Schools'], errors='coerce').fillna(0)
+        out['Total Students'] = 0
+        out['Total Teachers'] = 0
+        out['PTR'] = None
+        out['Students per School'] = None
+        out['Teachers per School'] = None
+        return out.sort_values('Total Schools', ascending=False).reset_index(drop=True)
+
+    def _metric_view(df, metric_name):
+        mapping = {
+            'PTR': 'PTR',
+            'Students per School': 'Students per School',
+            'Total Students': 'Total Students',
+            'Total Schools': 'Total Schools',
+        }
+        col = mapping[metric_name]
+        view = df.copy()
+        view['Metric Value'] = pd.to_numeric(view[col], errors='coerce').fillna(0)
+        ordered = ['Location', 'Metric Value', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR', 'Students per School', 'Teachers per School']
+        return view[ordered]
+
     tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
+
     with tabs[0]:
-        _uae_analytics_geo(filters)
+        geo_metric = st.selectbox(
+            "Select Metric to Visualize",
+            ["PTR", "Students per School", "Total Students", "Total Schools"],
+            key="uae_geo_metric_parity"
+        )
+        geo_level = st.radio(
+            "Select Level",
+            ["Emirate", "Curriculum"],
+            horizontal=True,
+            key="uae_geo_level_parity"
+        )
+        geo_emirate = st.selectbox(
+            "Select Emirate",
+            emirate_options,
+            index=0,
+            key="uae_geo_emirate_parity"
+        )
+
+        geo_filters = _apply_scope(emirate=geo_emirate)
+        base_df = _emirate_frame(geo_filters) if geo_level == "Emirate" else _curriculum_frame(geo_filters)
+        view_df = _metric_view(base_df, geo_metric)
+
+        if view_df.empty:
+            st.info("No data available for the selected filters.")
+        else:
+            fig = px.bar(
+                view_df.head(20),
+                x="Location",
+                y="Metric Value",
+                color="Metric Value",
+                color_continuous_scale="Blues",
+                title=f"Top 20 {geo_level}s by {geo_metric}",
+            )
+            fig.update_layout(
+                xaxis_tickangle=-45,
+                margin=dict(l=60, r=30, t=80, b=120),
+                plot_bgcolor="white",
+                paper_bgcolor="white"
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.dataframe(view_df, use_container_width=True, hide_index=True)
+
     with tabs[1]:
-        _uae_analytics_perf(filters)
+        perf_emirate = st.selectbox(
+            "Select Emirate",
+            emirate_options,
+            index=0,
+            key="uae_perf_emirate_parity"
+        )
+        perf_curriculum = st.selectbox(
+            "Select Curriculum",
+            curriculum_options,
+            index=0,
+            key="uae_perf_curriculum_parity"
+        )
+
+        perf_filters = _apply_scope(emirate=perf_emirate, curriculum=perf_curriculum)
+        overview = _uae_overview_metrics(perf_filters) or {}
+
+        total_schools = overview.get('total_schools', 0)
+        total_students = overview.get('total_students', 0)
+        total_teachers = overview.get('total_teachers', 0)
+        ptr_value = overview.get('state_ptr', overview.get('ptr', 'N/A'))
+
+        c1, c2, c3 = st.columns(3)
+        c4, c5, c6 = st.columns(3)
+
+        with c1:
+            st.metric("🏫 Total Schools", _fmt(total_schools))
+        with c2:
+            st.metric("👥 Total Students", _fmt(total_students))
+        with c3:
+            st.metric("👨‍🏫 Total Teachers", _fmt(total_teachers))
+        with c4:
+            st.metric("📊 PTR", ptr_value)
+        with c5:
+            schools_num = _as_float(total_schools)
+            students_num = _as_float(total_students)
+            st.metric("🎓 Students / School", f"{(students_num / schools_num):,.2f}" if schools_num else "0.00")
+        with c6:
+            schools_num = _as_float(total_schools)
+            teachers_num = _as_float(total_teachers)
+            st.metric("🏫 Teachers / School", f"{(teachers_num / schools_num):,.2f}" if schools_num else "0.00")
+
     with tabs[2]:
-        _uae_analytics_compare(filters)
+        comparison_level = st.radio(
+            "Comparison Level",
+            ["Emirate vs Emirate", "Curriculum vs Curriculum"],
+            horizontal=True,
+            key="uae_compare_level_parity"
+        )
+
+        if comparison_level == "Emirate vs Emirate":
+            compare_options = [x for x in emirate_options if x != 'All']
+            label_a = "Select Emirate A"
+            label_b = "Select Emirate B"
+            compare_df = _emirate_frame(_clone_filters())
+        else:
+            compare_options = [x for x in curriculum_options if x != 'All']
+            label_a = "Select Curriculum A"
+            label_b = "Select Curriculum B"
+            compare_df = _curriculum_frame(_clone_filters())
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            loc_a = st.selectbox(label_a, compare_options, key="uae_compare_a_parity") if compare_options else None
+        with col_b:
+            remaining = [x for x in compare_options if x != loc_a] or compare_options
+            loc_b = st.selectbox(label_b, remaining, key="uae_compare_b_parity") if remaining else None
+
+        if st.button("Compare", key="uae_compare_button_parity"):
+            if compare_df.empty or not loc_a or not loc_b:
+                st.info("Not enough data available to compare the selected locations.")
+            else:
+                result = compare_df[compare_df['Location'].isin([loc_a, loc_b])].copy()
+                st.dataframe(result, use_container_width=True, hide_index=True)
+                st.download_button(
+                    "📥 Download Comparison CSV",
+                    result.to_csv(index=False),
+                    "uae_comparison.csv",
+                    "text/csv",
+                    key="uae_compare_csv_parity"
+                )
+
     with tabs[3]:
-        _uae_analytics_custom(filters)
+        report_dimensions = st.multiselect(
+            "Select Dimensions",
+            ["Emirate", "Curriculum", "School Level"],
+            default=["Emirate"],
+            key="uae_report_dims_parity"
+        )
+        report_metrics = st.multiselect(
+            "Select Metrics",
+            ["Total Schools", "Total Students", "Total Teachers", "PTR"],
+            default=["Total Schools"],
+            key="uae_report_metrics_parity"
+        )
+
+        if st.button("Generate Report", key="uae_generate_report_parity"):
+            src = _uae_school_directory_summary(_clone_filters())
+            if src is None or src.empty:
+                st.info("No data available for the selected report dimensions.")
+            else:
+                dim_map = {
+                    "Emirate": _pick_col(src, "emirate", "District"),
+                    "Curriculum": _pick_col(src, "curriculum", "Curriculum"),
+                    "School Level": _pick_col(src, "school_level", "School Level"),
+                }
+                group_cols = [dim_map[d] for d in report_dimensions if dim_map.get(d)]
+                schools_col = _pick_col(src, "total_schools", "Total Schools")
+
+                if not group_cols:
+                    st.info("Please select at least one valid dimension.")
+                else:
+                    if schools_col:
+                        report = src.groupby(group_cols, dropna=False)[schools_col].sum().reset_index()
+                    else:
+                        report = src[group_cols].drop_duplicates().reset_index(drop=True)
+
+                    rename_map = {v: k for k, v in dim_map.items() if v}
+                    report = report.rename(columns=rename_map)
+                    if schools_col and schools_col in report.columns and "Total Schools" not in report.columns:
+                        report = report.rename(columns={schools_col: "Total Schools"})
+
+                    needs_emirate_metrics = any(m in report_metrics for m in ["Total Students", "Total Teachers", "PTR"])
+                    if needs_emirate_metrics and "Emirate" in report.columns:
+                        emirate_metrics = _emirate_frame(_clone_filters())
+                        if not emirate_metrics.empty:
+                            report = report.merge(
+                                emirate_metrics.rename(columns={"Location": "Emirate"})[["Emirate", "Total Students", "Total Teachers", "PTR"]],
+                                on="Emirate",
+                                how="left"
+                            )
+
+                    ordered_cols = [c for c in report_dimensions if c in report.columns] + [m for m in report_metrics if m in report.columns]
+                    if not ordered_cols:
+                        ordered_cols = list(report.columns)
+
+                    report = report[ordered_cols].reset_index(drop=True)
+                    st.dataframe(report, use_container_width=True, hide_index=True)
+
+                    st.download_button(
+                        "📥 Download CSV",
+                        report.to_csv(index=False).encode("utf-8"),
+                        "uae_custom_report.csv",
+                        "text/csv",
+                        key="uae_report_csv_parity"
+                    )
+
+                    excel_buffer = BytesIO()
+                    try:
+                        with pd.ExcelWriter(excel_buffer) as writer:
+                            report.to_excel(writer, index=False, sheet_name="Custom Report")
+                        st.download_button(
+                            "📥 Download Excel",
+                            excel_buffer.getvalue(),
+                            "uae_custom_report.xlsx",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="uae_report_excel_parity"
+                        )
+                    except Exception:
+                        pass
 
     st.markdown('---')
-    st.markdown(
-        "<div style='text-align:center;color:#757575;font-size:.85rem;'><strong>TutorCloud Global Dashboard</strong><br>© 2026 TutorCloud. All rights reserved.</div>",
-        unsafe_allow_html=True,
-    )
-
-# ── Analytics Tab 1: Geographic Analysis (mirrors India "Geographic Maps") ─────
-
+    st.markdown("<div style='text-align:center;color:#757575;font-size:.85rem;'><strong>TutorCloud Global Dashboard</strong><br>© 2026 TutorCloud. All rights reserved.</div>", unsafe_allow_html=True)
 def _uae_analytics_geo(filters):
     st.markdown('<div class="uae-section-header">🗺️ Geographic Distribution</div>', unsafe_allow_html=True)
 
