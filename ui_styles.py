@@ -598,32 +598,32 @@ def render_region_badge():
     _selector_rendered = st.session_state.get("_region_selector_rendered", False)
     if not _selector_rendered:
         with st.sidebar:
-        st.markdown(
-            '<style>'
-            'div[data-testid="stSidebar"] .tc-region-block {'
-            '    padding: 6px 0 8px 0;'
-            '    border-top: 1px solid rgba(250,250,250,0.15);'
-            '    margin-top: 6px;'
-            '}'
-            'div[data-testid="stSidebar"] .tc-region-title {'
-            '    font-size: 0.78rem; font-weight: 700;'
-            '    color: rgba(250,250,250,0.85);'
-            '    margin-bottom: 4px; letter-spacing: 0.03rem;'
-            '}'
-            '</style>'
-            '<div class="tc-region-block">'
-            '<div class="tc-region-title">&#127757;&nbsp; Select Region</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        _chosen = st.selectbox(
-            label='🌍 Region',
-            options=_VALID_REGIONS,
-            index=_VALID_REGIONS.index(_cur),
-            key='tc_region_selector',
-            label_visibility='collapsed',
-        )
-        st.session_state["_region_selector_rendered"] = True
+            st.markdown(
+                '<style>'
+                'div[data-testid="stSidebar"] .tc-region-block {'
+                '    padding: 6px 0 8px 0;'
+                '    border-top: 1px solid rgba(250,250,250,0.15);'
+                '    margin-top: 6px;'
+                '}'
+                'div[data-testid="stSidebar"] .tc-region-title {'
+                '    font-size: 0.78rem; font-weight: 700;'
+                '    color: rgba(250,250,250,0.85);'
+                '    margin-bottom: 4px; letter-spacing: 0.03rem;'
+                '}'
+                '</style>'
+                '<div class="tc-region-block">'
+                '<div class="tc-region-title">&#127757;&nbsp; Select Region</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            _chosen = st.selectbox(
+                label='🌍 Region',
+                options=_VALID_REGIONS,
+                index=_VALID_REGIONS.index(_cur),
+                key='tc_region_selector',
+                label_visibility='collapsed',
+            )
+            st.session_state["_region_selector_rendered"] = True
 
     # -- 4. On change: Python-side query_params write + forced rerun -----
     if _chosen != _cur:
