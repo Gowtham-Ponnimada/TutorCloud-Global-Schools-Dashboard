@@ -505,19 +505,267 @@ def render_nz_state_dashboard() -> None:
     _render_nz_footer()
 
 
+@st.cache_data(show_spinner=False)
+def _load_nz_analytics_school_frame() -> pd.DataFrame:
+    """Step 1 analytics loader: reuse NZ state school frame and ensure geo fields."""
+    try:
+        df = _load_nz_state_school_frame().copy()
+    except Exception:
+        df = pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    if "school_id" in df.columns:
+        df["school_id"] = pd.to_numeric(df["school_id"], errors="coerce")
+
+    # Ensure geo columns are present by merging dim schools if needed
+    if ("latitude" not in df.columns or "longitude" not in df.columns) and "school_id" in df.columns:
+        dim_path = NZ_DATA_DIR / "nz_dim_schools.csv"
+        if dim_path.exists():
+            dim = pd.read_csv(dim_path)
+            if "school_id" in dim.columns:
+                dim["school_id"] = pd.to_numeric(dim["school_id"], errors="coerce")
+                geo_cols = [c for c in ["school_id", "latitude", "longitude"] if c in dim.columns]
+                if len(geo_cols) >= 3:
+                    df = df.merge(dim[geo_cols], on="school_id", how="left", suffixes=("", "_dim"))
+                    if "latitude_dim" in df.columns and "latitude" not in df.columns:
+                        df["latitude"] = df["latitude_dim"]
+                    if "longitude_dim" in df.columns and "longitude" not in df.columns:
+                        df["longitude"] = df["longitude_dim"]
+                    drop_cols = [c for c in ["latitude_dim", "longitude_dim"] if c in df.columns]
+                    if drop_cols:
+                        df = df.drop(columns=drop_cols)
+
+    for col in ["latitude", "longitude", "total_students", "teacher_ftte", "teacher_headcount"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if "ptr_ftte" not in df.columns and {"total_students", "teacher_ftte"}.issubset(df.columns):
+        df["ptr_ftte"] = None
+        mask = df["teacher_ftte"].fillna(0) > 0
+        df.loc[mask, "ptr_ftte"] = df.loc[mask, "total_students"] / df.loc[mask, "teacher_ftte"]
+
+    if "ptr_ftte" in df.columns:
+        df["ptr_ftte"] = pd.to_numeric(df["ptr_ftte"], errors="coerce")
+
+    text_cols = [
+        "school_name",
+        "regional_council",
+        "territorial_authority",
+        "school_type",
+        "authority",
+        "gender",
+    ]
+    for col in text_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna("Unknown").astype(str).str.strip()
+
+    return df
+
+
 def render_nz_analytics() -> None:
     inject_professional_css()
-    st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">New Zealand analytics foundation connected</div>', unsafe_allow_html=True)
-    st.warning("New Zealand Analytics routing is now connected. Geographic Maps, Performance Metrics, Comparative Analysis, and Custom Reports will be built on the official NZ source model next.")
-    tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
+
+    st.markdown(
+        """
+        <div class="main-header">
+            <h1>📈 New Zealand Analytics Dashboard</h1>
+            <p>Geographic maps, performance metrics, comparative analysis, and custom reporting for New Zealand schools.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    df = _load_nz_analytics_school_frame()
+    if df.empty:
+        st.error(
+            "NZ analytics data could not be loaded. Ensure the processed NZ files exist and the NZ state school frame builds successfully."
+        )
+        _render_source_links()
+        _render_nz_footer()
+        return
+
+    st.caption(
+        "Students use 2025 school rolls. Teacher metrics use the latest teacher dataset (2024 where available). "
+        "PTR values are FTTE-overlap based and shown only where teacher FTTE exists."
+    )
+
+    tabs = st.tabs([
+        "🗺️ Geographic Maps",
+        "🎯 Performance Metrics",
+        "🔍 Comparative Analysis",
+        "📝 Custom Reports"
+    ])
+
     with tabs[0]:
-        st.info("Geographic layer will be built from Regional Council, Territorial Authority, and SA2 / school profile data.")
+        st.markdown("### School Location Map")
+
+        f1, f2, f3, f4, f5 = st.columns(5)
+
+        region_options = ["All"] + sorted(
+            [x for x in df.get("regional_council", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        selected_region = f1.selectbox(
+            "Regional Council",
+            region_options,
+            index=0,
+            key="nz_analytics_geo_region",
+        )
+
+        ta_base = df.copy()
+        if selected_region != "All" and "regional_council" in ta_base.columns:
+            ta_base = ta_base[ta_base["regional_council"] == selected_region]
+
+        ta_options = ["All"] + sorted(
+            [x for x in ta_base.get("territorial_authority", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        selected_ta = f2.selectbox(
+            "Territorial Authority",
+            ta_options,
+            index=0,
+            key="nz_analytics_geo_ta",
+        )
+
+        type_options = ["All"] + sorted(
+            [x for x in df.get("school_type", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        selected_type = f3.selectbox(
+            "School Type",
+            type_options,
+            index=0,
+            key="nz_analytics_geo_type",
+        )
+
+        authority_options = ["All"] + sorted(
+            [x for x in df.get("authority", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        selected_authority = f4.selectbox(
+            "Authority",
+            authority_options,
+            index=0,
+            key="nz_analytics_geo_authority",
+        )
+
+        gender_options = ["All"] + sorted(
+            [x for x in df.get("gender", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x]
+        )
+        selected_gender = f5.selectbox(
+            "Gender",
+            gender_options,
+            index=0,
+            key="nz_analytics_geo_gender",
+        )
+
+        filtered = df.copy()
+
+        if selected_region != "All" and "regional_council" in filtered.columns:
+            filtered = filtered[filtered["regional_council"] == selected_region]
+        if selected_ta != "All" and "territorial_authority" in filtered.columns:
+            filtered = filtered[filtered["territorial_authority"] == selected_ta]
+        if selected_type != "All" and "school_type" in filtered.columns:
+            filtered = filtered[filtered["school_type"] == selected_type]
+        if selected_authority != "All" and "authority" in filtered.columns:
+            filtered = filtered[filtered["authority"] == selected_authority]
+        if selected_gender != "All" and "gender" in filtered.columns:
+            filtered = filtered[filtered["gender"] == selected_gender]
+
+        geo_df = filtered.copy()
+        if "latitude" in geo_df.columns and "longitude" in geo_df.columns:
+            geo_df = geo_df.dropna(subset=["latitude", "longitude"])
+        else:
+            geo_df = pd.DataFrame()
+
+        k1, k2, k3, k4 = st.columns(4)
+        mapped_schools = int(geo_df["school_id"].nunique()) if not geo_df.empty and "school_id" in geo_df.columns else 0
+        mapped_students = float(geo_df["total_students"].fillna(0).sum()) if not geo_df.empty and "total_students" in geo_df.columns else 0
+        mapped_tas = int(geo_df["territorial_authority"].nunique()) if not geo_df.empty and "territorial_authority" in geo_df.columns else 0
+        mapped_ftte = float(geo_df["teacher_ftte"].fillna(0).sum()) if not geo_df.empty and "teacher_ftte" in geo_df.columns else 0
+
+        k1.metric("MAPPED SCHOOLS", _fmt_int(mapped_schools))
+        k2.metric("MAPPED STUDENTS", _fmt_int(mapped_students))
+        k3.metric("MAPPED TERRITORIAL AUTHORITIES", _fmt_int(mapped_tas))
+        k4.metric("MAPPED TEACHER FTTE", _fmt_float(mapped_ftte, 2))
+
+        if geo_df.empty:
+            st.info("No geocoded schools are available for the current analytics map selection.")
+        else:
+            map_df = geo_df.copy()
+            if "total_students" in map_df.columns:
+                map_df["marker_size"] = map_df["total_students"].fillna(0).clip(lower=1)
+            else:
+                map_df["marker_size"] = 1
+
+            hover_cols = []
+            for c in ["regional_council", "territorial_authority", "school_type", "authority", "gender", "total_students", "teacher_ftte", "ptr_ftte"]:
+                if c in map_df.columns:
+                    hover_cols.append(c)
+
+            color_col = "school_type" if "school_type" in map_df.columns else None
+
+            fig = px.scatter_mapbox(
+                map_df,
+                lat="latitude",
+                lon="longitude",
+                hover_name="school_name" if "school_name" in map_df.columns else None,
+                hover_data=hover_cols,
+                color=color_col,
+                size="marker_size",
+                size_max=22,
+                zoom=4.3,
+                height=560,
+                mapbox_style="open-street-map",
+            )
+            fig.update_layout(
+                margin=dict(l=0, r=0, t=0, b=0),
+                legend_title_text="School Type" if color_col == "school_type" else "",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("### Filtered School Extract")
+
+        display_cols = [
+            c for c in [
+                "school_name",
+                "regional_council",
+                "territorial_authority",
+                "school_type",
+                "authority",
+                "gender",
+                "total_students",
+                "teacher_headcount",
+                "teacher_ftte",
+                "ptr_ftte",
+                "latitude",
+                "longitude",
+            ] if c in filtered.columns
+        ]
+
+        table_df = filtered[display_cols].copy() if display_cols else filtered.copy()
+
+        if "ptr_ftte" in table_df.columns:
+            table_df["ptr_ftte"] = pd.to_numeric(table_df["ptr_ftte"], errors="coerce").round(2)
+        if "teacher_ftte" in table_df.columns:
+            table_df["teacher_ftte"] = pd.to_numeric(table_df["teacher_ftte"], errors="coerce").round(2)
+
+        st.dataframe(table_df, use_container_width=True, hide_index=True)
+
+        csv_data = table_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download filtered NZ analytics school extract (CSV)",
+            data=csv_data,
+            file_name="nz_analytics_geographic_maps_filtered_school_extract.csv",
+            mime="text/csv",
+        )
+
     with tabs[1]:
-        st.info("Performance metrics will use school rolls, teacher headcount / FTTE, school counts, and derived PTR calculations.")
+        st.info("Step 2 next: NZ Performance Metrics tab will be implemented here.")
+
     with tabs[2]:
-        st.info("Comparative analysis will support region-vs-region and territorial-authority comparisons.")
+        st.info("Step 3 next: NZ Comparative Analysis tab will be implemented here.")
+
     with tabs[3]:
-        st.info("Custom reports will be built after the NZ transformed fact tables are loaded.")
+        st.info("Step 4 next: NZ Custom Reports tab will be implemented here.")
+
     _render_source_links()
     _render_nz_footer()
