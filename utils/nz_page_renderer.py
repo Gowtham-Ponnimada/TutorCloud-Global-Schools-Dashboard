@@ -36,7 +36,7 @@ def _render_nz_footer():
         """
         <div style='text-align:center;color:#757575;font-size:.85rem;margin-top:2rem;'>
             <strong>TutorCloud Global Dashboard</strong><br>
-            New Zealand dashboard foundation connected to processed official datasets.
+            © 2026 TutorCloud. All rights reserved.
         </div>
         """,
         unsafe_allow_html=True,
@@ -223,7 +223,6 @@ def render_nz_home() -> None:
     bundle = _load_nz_home_bundle()
     if not bundle.get("ok", False):
         st.error("NZ Home data could not be loaded. Check the processed NZ CSV files.")
-        _render_source_links()
         _render_nz_footer()
         return
 
@@ -236,7 +235,7 @@ def render_nz_home() -> None:
                 return c
         return None
 
-    st.markdown("### National Overview")
+    st.markdown("## 📊 National Overview")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("TOTAL REGIONS", _fmt_int(bundle["total_regions"]))
     c2.metric("TOTAL SCHOOLS", _fmt_int(bundle["total_schools"]))
@@ -333,7 +332,7 @@ def render_nz_home() -> None:
             top_row = regional_chart.iloc[0]
             top_region_text = f"{top_row[rl]} currently leads the national regional ranking with {_fmt_int(top_row[rv])} mapped students."
 
-    st.markdown("### Key Insights")
+    st.markdown("## 💡 Key Insights")
     i1, i2, i3 = st.columns(3)
 
     i1.markdown(
@@ -376,7 +375,7 @@ def render_nz_home() -> None:
         unsafe_allow_html=True,
     )
 
-    st.markdown("### 🧭 Explore More")
+    st.markdown("## 🧭 Explore More")
     e1, e2 = st.columns(2)
 
     e1.markdown(
@@ -407,7 +406,6 @@ def render_nz_home() -> None:
         unsafe_allow_html=True,
     )
 
-    _render_source_links()
     _render_nz_footer()
 
 
@@ -427,7 +425,6 @@ def render_nz_state_dashboard() -> None:
     bundle = _load_nz_state_school_frame()
     if not bundle.get("ok", False):
         st.error("NZ state dashboard data could not be loaded. Check the processed NZ files.")
-        _render_source_links()
         _render_nz_footer()
         return
 
@@ -437,7 +434,6 @@ def render_nz_state_dashboard() -> None:
 
     if df.empty:
         st.warning("NZ state dashboard data frame is empty.")
-        _render_source_links()
         _render_nz_footer()
         return
 
@@ -531,7 +527,7 @@ def render_nz_state_dashboard() -> None:
     ptr_ftte = (total_students / total_teacher_ftte) if total_teacher_ftte > 0 else None
     students_per_school = (total_students / total_schools) if total_schools > 0 else None
 
-    st.markdown("### State Overview")
+    st.markdown("## 📊 Overview")
     k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("REGIONS", _fmt_int(total_regions))
     k2.metric("TERRITORIAL AUTHORITIES", _fmt_int(total_tas))
@@ -544,61 +540,6 @@ def render_nz_state_dashboard() -> None:
     k7.metric("TEACHER HEADCOUNT", _fmt_int(total_teacher_headcount))
     k8.metric("STUDENTS / SCHOOL", _fmt_float(students_per_school, 1) if students_per_school is not None else "N/A")
     k9.metric("SCHOOLS WITH TEACHER DATA", _fmt_int(schools_with_teacher_data))
-
-    # NZ_STEP8_STATE_INSIGHTS
-    top_ta_text = "No territorial authority ranking is available for the current selection."
-    if not ta_summary.empty:
-        _top_ta_row = ta_summary.iloc[0]
-        top_ta_text = f"{_top_ta_row['territorial_authority']} leads the current selection with {_fmt_int(_top_ta_row['total_students'])} students."
-
-    top_school_type_text = "No school-type distribution is available for the current selection."
-    if not school_type_summary.empty:
-        _top_type_row = school_type_summary.iloc[0]
-        top_school_type_text = f"{_top_type_row['school_type']} is the largest school type in the current selection with {_fmt_int(_top_type_row['total_students'])} students."
-
-    coverage_pct = (schools_with_teacher_data / total_schools * 100.0) if total_schools > 0 else None
-
-    st.markdown("### NZ State Insights")
-    si1, si2, si3 = st.columns(3)
-
-    si1.markdown(
-        f"""
-        <div style="background:#ffffff;border:1px solid #dbeafe;border-radius:14px;padding:18px;min-height:165px;">
-            <div style="font-size:1.02rem;font-weight:700;color:#1d4ed8;margin-bottom:10px;">🧭 Current Scope</div>
-            <div style="font-size:0.95rem;color:#374151;line-height:1.55;">
-                The current state view covers <strong>{_fmt_int(total_schools)}</strong> schools across
-                <strong>{_fmt_int(total_tas)}</strong> territorial authorities and <strong>{_fmt_int(total_regions)}</strong> regions.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    si2.markdown(
-        f"""
-        <div style="background:#ffffff;border:1px solid #dcfce7;border-radius:14px;padding:18px;min-height:165px;">
-            <div style="font-size:1.02rem;font-weight:700;color:#15803d;margin-bottom:10px;">📍 Territorial Leader</div>
-            <div style="font-size:0.95rem;color:#374151;line-height:1.55;">
-                {top_ta_text}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    si3.markdown(
-        f"""
-        <div style="background:#ffffff;border:1px solid #ede9fe;border-radius:14px;padding:18px;min-height:165px;">
-            <div style="font-size:1.02rem;font-weight:700;color:#6d28d9;margin-bottom:10px;">👨‍🏫 Teacher Coverage</div>
-            <div style="font-size:0.95rem;color:#374151;line-height:1.55;">
-                Teacher data is available for <strong>{_fmt_int(schools_with_teacher_data)}</strong> schools
-                ({_fmt_float(coverage_pct, 1) if coverage_pct is not None else "N/A"}% of the current selection).<br><br>
-                {top_school_type_text}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     # -------------------------
     # Territorial Authority summary
@@ -807,51 +748,6 @@ def render_nz_state_dashboard() -> None:
         mime="text/csv",
     )
 
-    # NZ_STEP8_STATE_NAV
-    st.markdown("### 🧭 Continue Exploring")
-    nav1, nav2 = st.columns(2)
-
-    nav1.markdown(
-        """
-        <a href="/?region=New%20Zealand" target="_self" style="text-decoration:none;">
-            <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:white;border-radius:16px;padding:20px;min-height:140px;">
-                <div style="font-size:1.08rem;font-weight:800;margin-bottom:10px;">🏠 Back to Home</div>
-                <div style="font-size:0.95rem;line-height:1.5;">
-                    Return to the NZ national overview, top regional rankings, and headline benchmark metrics.
-                </div>
-            </div>
-        </a>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    nav2.markdown(
-        """
-        <a href="/Analytics?region=New%20Zealand" target="_self" style="text-decoration:none;">
-            <div style="background:linear-gradient(135deg,#059669,#047857);color:white;border-radius:16px;padding:20px;min-height:140px;">
-                <div style="font-size:1.08rem;font-weight:800;margin-bottom:10px;">📈 Open Analytics</div>
-                <div style="font-size:0.95rem;line-height:1.5;">
-                    Continue into NZ Geographic Maps, Performance Metrics, Comparative Analysis, and Custom Reports.
-                </div>
-            </div>
-        </a>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        """
-        <div style="margin-top:14px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;">
-            <div style="font-size:0.92rem;color:#374151;line-height:1.55;">
-                <strong>Coverage & Method:</strong> NZ State metrics use 2025 student rolls and the latest processed teacher dataset,
-                with PTR shown as an FTTE-overlap metric where teacher FTTE exists.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    _render_source_links()
     _render_nz_footer()
 
 
@@ -1043,53 +939,12 @@ def render_nz_analytics() -> None:
         st.error(
             "NZ analytics data could not be loaded. Ensure the processed NZ files exist and the NZ state school frame builds successfully."
         )
-        _render_source_links()
         _render_nz_footer()
         return
 
     st.caption(
         "Students use 2025 school rolls. Teacher metrics use the latest teacher dataset (2024 where available). "
         "PTR values are FTTE-overlap based and shown only where teacher FTTE exists."
-    )
-
-    # NZ_STEP8_ANALYTICS_GUIDE
-    st.markdown("### Analytics Workspace Guide")
-    g1, g2, g3 = st.columns(3)
-
-    g1.markdown(
-        """
-        <div style="background:#ffffff;border:1px solid #dbeafe;border-radius:14px;padding:18px;min-height:155px;">
-            <div style="font-size:1.0rem;font-weight:700;color:#1d4ed8;margin-bottom:10px;">🗺️ Maps</div>
-            <div style="font-size:0.94rem;color:#374151;line-height:1.55;">
-                Use Geographic Maps to inspect school locations, mapped students, and geocoded coverage for the current NZ selection.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    g2.markdown(
-        """
-        <div style="background:#ffffff;border:1px solid #dcfce7;border-radius:14px;padding:18px;min-height:155px;">
-            <div style="font-size:1.0rem;font-weight:700;color:#15803d;margin-bottom:10px;">🔍 Comparisons</div>
-            <div style="font-size:0.94rem;color:#374151;line-height:1.55;">
-                Use Comparative Analysis to compare regions or territorial authorities side by side across schools, students, teachers, and PTR.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    g3.markdown(
-        """
-        <div style="background:#ffffff;border:1px solid #ede9fe;border-radius:14px;padding:18px;min-height:155px;">
-            <div style="font-size:1.0rem;font-weight:700;color:#6d28d9;margin-bottom:10px;">📝 Reports</div>
-            <div style="font-size:0.94rem;color:#374151;line-height:1.55;">
-                Use Custom Reports to group NZ data by geography and school characteristics, then export the output and school extract CSVs.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
     )
 
     tabs = st.tabs([
@@ -1100,7 +955,7 @@ def render_nz_analytics() -> None:
     ])
 
     with tabs[0]:
-        st.markdown("### School Location Map")
+        st.markdown("## 🗺️ Geographic Maps")
 
         f1, f2, f3, f4, f5 = st.columns(5)
 
@@ -1886,5 +1741,4 @@ def render_nz_analytics() -> None:
                 mime="text/csv",
             )
 
-    _render_source_links()
     _render_nz_footer()
