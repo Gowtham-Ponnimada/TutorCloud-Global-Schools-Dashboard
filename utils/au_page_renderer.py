@@ -194,23 +194,432 @@ def _display_df(df: pd.DataFrame, *, use_container_width: bool = True, hide_inde
     st.dataframe(_format_dataframe_for_display(df), use_container_width=use_container_width, hide_index=hide_index)
 
 
+def _inject_au_home_css() -> None:
+    st.markdown(
+        """
+        <style>
+        /* India Home visual shell */
+        .main {
+            background-color: #F5F7FA;
+            padding: 1rem;
+        }
+
+        .stApp {
+            background: #F5F7FA;
+        }
+
+        [data-testid="stSidebar"] {
+            background: white;
+            color: #1f1f1f;
+            border-right: 1px solid #E0E0E0;
+        }
+
+        [data-testid="stSidebar"] .stMarkdown,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] label {
+            color: #1f1f1f !important;
+        }
+
+        div[data-baseweb="select"] {
+            color: #1f1f1f !important;
+            background: white !important;
+        }
+
+        div[data-baseweb="select"] * {
+            color: #1f1f1f !important;
+        }
+
+        .stSelectbox div[role="button"],
+        .stSelectbox div[role="button"] * {
+            color: #1f1f1f !important;
+        }
+
+        div[data-baseweb="popover"] {
+            background: white !important;
+        }
+
+        ul[role="listbox"] li {
+            color: #1f1f1f !important;
+            background: white !important;
+            padding: 0.5rem 1rem;
+        }
+
+        ul[role="listbox"] li:hover {
+            background: #0068C9 !important;
+            color: white !important;
+        }
+
+        /* India metric card styling */
+        [data-testid="stMetric"] {
+            background: white;
+            padding: 1.25rem;
+            border-radius: 8px;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1rem;
+        }
+
+        [data-testid="stMetricLabel"] {
+            font-size: 1.5rem !important;
+            color: #616161 !important;
+            font-weight: 600 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+        }
+
+        [data-testid="stMetricValue"] {
+            font-size: 1.5rem !important;
+            font-weight: 700 !important;
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            max-width: none !important;
+            min-width: max-content !important;
+        }
+
+        [data-testid="stMetricDelta"] {
+            font-size: 1.5rem !important;
+            font-weight: 600 !important;
+        }
+
+        /* India chart/table shell */
+        [data-testid="stPlotlyChart"] {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1.5rem;
+        }
+
+        [data-testid="stDataFrame"] {
+            background: white;
+            border-radius: 8px;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            padding: 1rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1.5rem;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+        }
+
+        th {
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #1565C0;
+        }
+
+        td {
+            padding: 0.75rem;
+            border-bottom: 1px solid #E0E0E0;
+            color: #424242;
+        }
+
+        tr:hover {
+            background-color: #F5F7FA;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .stButton > button {
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1.5rem;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .stButton > button:hover {
+            background: linear-gradient(135deg, #1976d2 0%, #1565C0 100%);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .stDownloadButton > button {
+            background: linear-gradient(135deg, #43A047 0%, #388E3C 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1.5rem;
+            font-weight: 600;
+        }
+
+        hr {
+            margin: 2rem 0;
+            border: none;
+            border-top: 2px solid #E0E0E0;
+        }
+
+        .au-top-title,
+        .au-top-rule,
+        .au-section-hero,
+        .au-section-icon,
+        .au-section-title,
+        .au-subsection-title,
+        .au-subsection-subtitle,
+        .au-grid-gap {
+            all: unset;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _inject_au_css() -> None:
     st.markdown(
         f"""
         <style>
-        .stApp {{ background: {INDIA_UI['page_bg']}; }}
-        .au-top-title {{ text-align:center; color:{INDIA_UI['text']}; font-size:1.02rem; font-weight:700; margin-top:0.15rem; margin-bottom:0.15rem; }}
-        .au-top-rule {{ border:none; border-top:1px solid #E5E7EB; margin-top:0.75rem; margin-bottom:2.2rem; }}
-        .au-section-hero {{ display:flex; align-items:center; gap:12px; margin-bottom:1.15rem; }}
-        .au-section-icon {{ font-size:1.9rem; line-height:1; }}
-        .au-section-title {{ color:{INDIA_UI['text']}; font-size:2.05rem; font-weight:800; line-height:1.12; margin:0; }}
-        .au-subsection-title {{ color:{INDIA_UI['text']}; font-size:1.08rem; font-weight:800; margin-top:0.35rem; margin-bottom:0.15rem; }}
-        .au-subsection-subtitle {{ color:{INDIA_UI['muted']}; font-size:0.93rem; margin-bottom:0.8rem; }}
-        .au-kpi-card {{ background:{INDIA_UI['card_bg']}; border:2px solid {INDIA_UI['border']}; border-radius:12px; padding:18px 16px; box-shadow:{INDIA_UI['shadow']}; min-height:94px; display:flex; flex-direction:column; justify-content:center; }}
-        .au-kpi-label {{ color:#7E7E7E; font-size:0.83rem; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; margin-bottom:10px; line-height:1.15; }}
-        .au-kpi-value {{ color:{INDIA_UI['primary_blue']}; font-size:1.98rem; font-weight:800; line-height:1.05; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }}
-        .au-grid-gap {{ height:18px; }}
-        div[data-testid="stDataFrame"] {{ border-radius:12px; overflow:hidden; border:1px solid #E5E7EB; background:white; }}
+        .main {{
+            background-color: #F5F7FA;
+            padding: 1rem;
+        }}
+
+        .stApp {{
+            background: #F5F7FA;
+        }}
+
+        [data-testid="stMetric"] {{
+            background: white;
+            padding: 1.25rem;
+            border-radius: 8px;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1rem;
+        }}
+
+        [data-testid="stMetricLabel"] {{
+            font-size: 1.5rem !important;
+            color: #616161;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        [data-testid="stMetricValue"] {{
+            font-size: 1.5rem !important;
+            font-weight: 700;
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            max-width: none !important;
+            min-width: max-content !important;
+        }}
+
+        [data-testid="stPlotlyChart"] {{
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1.5rem;
+        }}
+
+        [data-testid="stDataFrame"] {{
+            background: white;
+            border-radius: 8px;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            padding: 1rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1.5rem;
+        }}
+
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+        }}
+
+        th {{
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #1565C0;
+        }}
+
+        td {{
+            padding: 0.75rem;
+            border-bottom: 1px solid #E0E0E0;
+            color: #424242;
+        }}
+
+        tr:hover {{
+            background-color: #F5F7FA;
+        }}
+
+        .main-header {{
+            font-size: 1.5rem !important;
+            font-weight: 700;
+            color: #1f1f1f;
+            border-bottom: 3px solid #1e88e5;
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.35rem;
+        }}
+
+        .sub-header {{
+            font-size: 1rem;
+            color: #616161;
+            margin-bottom: 1.25rem;
+        }}
+
+        .section-header {{
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1565C0;
+            background: #E3F2FD;
+            padding: 8px 14px;
+            border-radius: 6px;
+            margin: 18px 0 12px 0;
+            border-left: 4px solid #1e88e5;
+        }}
+
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 0.5rem;
+        }}
+
+        .stTabs [data-baseweb="tab"] {{
+            background: white;
+            border: 2px solid #1e88e5;
+            border-radius: 8px 8px 0 0;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            color: #1565C0;
+        }}
+
+        .stTabs [aria-selected="true"] {{
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white;
+        }}
+
+        .stButton > button {{
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1.5rem;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }}
+
+        .stDownloadButton > button {{
+            background: linear-gradient(135deg, #43A047 0%, #388E3C 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1.5rem;
+            font-weight: 600;
+        }}
+
+        [data-testid="stSidebar"] {{
+            background: linear-gradient(180deg, #1e88e5 0%, #1976d2 100%);
+            color: white;
+        }}
+
+        [data-testid="stSidebar"] .stMarkdown,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] label {{
+            color: white !important;
+        }}
+
+        div[data-baseweb="select"] {{
+            color: #1f1f1f !important;
+            background: white !important;
+        }}
+
+        div[data-baseweb="select"] * {{
+            color: #1f1f1f !important;
+        }}
+
+        .stSelectbox div[role="button"],
+        .stSelectbox div[role="button"] * {{
+            color: #1f1f1f !important;
+        }}
+
+        div[data-baseweb="popover"] {{
+            background: white !important;
+        }}
+
+        ul[role="listbox"] li {{
+            color: #1f1f1f !important;
+            background: white !important;
+            padding: 0.5rem 1rem;
+        }}
+
+        ul[role="listbox"] li:hover {{
+            background: #0068C9 !important;
+            color: white !important;
+        }}
+
+        .au-top-title,
+        .au-top-rule,
+        .au-section-hero,
+        .au-section-icon,
+        .au-section-title,
+        .au-subsection-title,
+        .au-subsection-subtitle,
+        .au-grid-gap {{
+            all: unset;
+        }}
+
+        .au-kpi-card {{
+            background: white;
+            padding: 1.25rem;
+            border-radius: 8px;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1rem;
+            display: block;
+        }}
+
+        .au-kpi-label {{
+            font-size: 1.5rem !important;
+            color: #616161;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: block;
+            margin-bottom: 0.35rem;
+        }}
+
+        .au-kpi-value {{
+            font-size: 1.5rem !important;
+            font-weight: 700;
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            display: block;
+            white-space: nowrap;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -240,9 +649,12 @@ def _render_kpi_cards(cards: List[Dict[str, Any]], per_row: int = 3) -> None:
         cols = st.columns(per_row)
         for idx, card in enumerate(row):
             with cols[idx]:
-                st.markdown(f'''<div class="au-kpi-card"><div class="au-kpi-label">{card['label']}</div><div class="au-kpi-value">{card['value']}</div></div>''', unsafe_allow_html=True)
+                st.metric(
+                    label=str(card.get("label", "")),
+                    value=str(card.get("value", "")),
+                )
         if i + per_row < len(cards):
-            st.markdown('<div class="au-grid-gap"></div>', unsafe_allow_html=True)
+            st.markdown("<div style='height: 0.35rem;'></div>", unsafe_allow_html=True)
 
 
 def _style_chart(fig, title: Optional[str] = None, x_title: Optional[str] = None, y_title: Optional[str] = None, height: int = 430):
@@ -560,7 +972,7 @@ def _render_metric_cards_overview(agg_data: Dict[str, Any]) -> None:
 # RENDERERS
 # -----------------------------
 def render_au_home() -> None:
-    _inject_au_css()
+    _inject_au_home_css()
     svc = _get_service()
     summary = svc.get_national_summary() or {}
     states_df = _safe_state_df()
@@ -570,8 +982,10 @@ def render_au_home() -> None:
     students = summary.get("total_students")
     students_per_school = round(_num(students) / _num(schools)) if _num(schools) > 0 else None
 
-    _render_top_header("National K-12 Education Overview - Australia 2025")
-    _render_section_header("National Overview", icon="📊")
+    st.markdown("# 🏠 TutorCloud Global Dashboard")
+    st.markdown("**National K-12 Education Overview - Australia 2025**")
+    st.markdown("---")
+    st.markdown("## 📊 National Overview")
 
     cards = [
         {"label": "TOTAL STATES/UTS", "value": _fmt_int(total_states)},
@@ -584,7 +998,7 @@ def render_au_home() -> None:
     _render_kpi_cards(cards, per_row=3)
 
     st.markdown("<div style='height: 22px;'></div>", unsafe_allow_html=True)
-    _render_subsection("🏆 Top 10 States by School Count")
+    st.markdown("## 🏆 Top 10 States by School Count")
     if not states_df.empty:
         df = states_df.sort_values("schools", ascending=False).head(10)
         fig = px.bar(df, x="state_name", y="schools", color_discrete_sequence=[INDIA_UI["schools"]])

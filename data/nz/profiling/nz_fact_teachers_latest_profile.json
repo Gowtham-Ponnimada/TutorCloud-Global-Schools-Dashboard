@@ -1,0 +1,10 @@
+{
+  "rows_before_dim_filter": 2570,
+  "rows_after_dim_filter": 2421,
+  "rows_final": 2421,
+  "latest_teacher_year": 2024,
+  "latest_headcount_column": "head_count_2024",
+  "latest_ftte_column": "ftte_2024",
+  "teacher_headcount_sum": 66145.0,
+  "teacher_ftte_sum": 56448.9118
+}

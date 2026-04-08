@@ -82,6 +82,11 @@ elif _current_region == "Australia":
     from utils.au_page_renderer import render_au_home
     render_au_home()
     st.stop()
+
+elif _current_region == "New Zealand":
+    from utils.nz_page_renderer import render_nz_home
+    render_nz_home()
+    st.stop()
 elif _current_region == "United States":
     render_us_home()
     st.stop()

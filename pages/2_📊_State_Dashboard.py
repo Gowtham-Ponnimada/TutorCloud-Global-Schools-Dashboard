@@ -191,6 +191,11 @@ elif _current_region == "Australia":
     from utils.au_page_renderer import render_au_state_dashboard
     render_au_state_dashboard()
     st.stop()
+
+elif _current_region == "New Zealand":
+    from utils.nz_page_renderer import render_nz_state_dashboard
+    render_nz_state_dashboard()
+    st.stop()
 elif _current_region == "United States":
     render_us_state_dashboard()
     st.stop()

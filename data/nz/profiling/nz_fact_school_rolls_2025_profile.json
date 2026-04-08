@@ -1,0 +1,10 @@
+{
+  "rows_after_summary_removal": 2527,
+  "total_students_after_summary_removal": 844278.0,
+  "summary_rows_removed": 1,
+  "summary_students_removed": 856412.0,
+  "unmatched_to_dim_rows": 6,
+  "unmatched_to_dim_students": 217.0,
+  "matched_to_dim_rows": 2521,
+  "matched_to_dim_students": 844061.0
+}
