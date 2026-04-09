@@ -1449,7 +1449,12 @@ def _uae_tab_teachers(filters):
                          color="PTR", color_continuous_scale="RdYlGn_r",
                          labels={"emirate": "Emirate", "PTR": "Students per Teacher"},
                          text="ptr_formatted")
-            fig.update_traces(texttemplate="%{text:d}", textposition="outside")
+            fig.update_traces(
+                texttemplate="%{text}",
+                textposition="outside",
+                customdata=df_ptr[["ptr_formatted"]].values,
+                hovertemplate="<b>%{y}</b><br>PTR: %{customdata[0]}<extra></extra>"
+            )
             fig.update_layout(plot_bgcolor="#FFF", paper_bgcolor="#FFF", height=340,
                               margin=dict(l=120, t=30))
             st.plotly_chart(fig, use_container_width=True)
@@ -2143,10 +2148,19 @@ def _uae_analytics_geo(filters):
             text="value",
             labels={"emirate": "Emirate", "value": y_label}
         )
-        fig.update_traces(
-            texttemplate="%{text:d}" if "PTR" in metric_choice else "%{text:,.0f}",
-            textposition="outside"
-        )
+        if "PTR" in metric_choice:
+            _ptr_labels = df["value"].apply(_fmt_ptr_ratio)
+            fig.update_traces(
+                customdata=_ptr_labels,
+                texttemplate="%{customdata}",
+                hovertemplate="<b>%{x}</b><br>PTR: %{customdata}<extra></extra>",
+                textposition="outside"
+            )
+        else:
+            fig.update_traces(
+                texttemplate="%{text:,.0f}",
+                textposition="outside"
+            )
         fig.update_layout(
             height=480, plot_bgcolor="white", paper_bgcolor="white",
             showlegend=False, coloraxis_showscale=False,
@@ -2225,14 +2239,17 @@ def _uae_analytics_perf(filters):
         tps = round(total_tch / total_sch, 2)
 
     st.markdown('<div class="section-header">📊 Key Metrics</div>', unsafe_allow_html=True)
+    st.caption("UAE_PTR_BUILD_20260409_V3")
     k1, k2, k3 = st.columns(3)
     with k1: st.metric("🏫 Total Schools",   _fmt(total_sch))
     with k2: st.metric("🎓 Total Students",  _fmt(total_enr))
     with k3: st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
 
     k4, k5, k6 = st.columns(3)
-    ptr_color = "normal" if ptr and ptr < 30 else "inverse"
-    with k4: st.metric("📐 PTR", _fmt_ptr_ratio(ptr), delta_color=ptr_color)
+    computed_ptr = (float(total_enr) / float(total_tch)) if (total_tch is not None and float(total_tch) > 0) else None
+    ptr_color = "normal" if (computed_ptr is not None and computed_ptr < 30) else "inverse"
+    ptr_display = f"{int(round(computed_ptr))}:1" if computed_ptr is not None else "N/A"
+    with k4: st.metric("📐 PTR", ptr_display, delta_color=ptr_color)
     with k5: st.metric("📚 Students/School",        _fmt(sps) if sps else "N/A")
     with k6: st.metric("🏫 Teachers/School",        f"{tps:.2f}" if tps else "N/A")
 
