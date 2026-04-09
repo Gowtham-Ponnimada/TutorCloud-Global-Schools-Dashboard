@@ -1906,8 +1906,8 @@ def render_uae_analytics():
         total_schools = overview.get('total_schools', 0)
         total_students = overview.get('total_students', 0)
         total_teachers = overview.get('total_teachers', 0)
-        ptr_value = overview.get('state_ptr', overview.get('ptr', 'N/A'))
-
+        ptr_value = overview.get('state_ptr', overview.get('ptr', None))
+        ptr_display = ptr_value if isinstance(ptr_value, str) and ':' in ptr_value else _fmt_ptr_ratio(ptr_value)
         c1, c2, c3 = st.columns(3)
         c4, c5, c6 = st.columns(3)
 
@@ -1918,7 +1918,7 @@ def render_uae_analytics():
         with c3:
             st.metric("👨‍🏫 Total Teachers", _fmt(total_teachers))
         with c4:
-            st.metric("📊 PTR", _fmt_ptr_ratio(ptr_value))
+            st.metric("📊 PTR", ptr_display)
         with c5:
             schools_num = _as_float(total_schools)
             students_num = _as_float(total_students)
