@@ -954,16 +954,16 @@ def _render_metric_cards_overview(agg_data: Dict[str, Any]) -> None:
     students = _num(agg_data.get("total_students"))
     teachers = _num(agg_data.get("total_teachers"))
     ptr = agg_data.get("ptr")
-    sps = round(students / schools) if schools > 0 else None
+    sps = round(students / schools, 2) if schools > 0 else None
     tps = round(teachers / schools, 2) if schools > 0 and teachers > 0 else None
 
     cards = [
-        {"label": "TOTAL SCHOOLS", "value": _fmt_int(schools)},
-        {"label": "TOTAL STUDENTS", "value": _fmt_int(students)},
-        {"label": "TOTAL TEACHERS", "value": _fmt_int(teachers)},
+        {"label": "Total Schools", "value": _fmt_int(schools)},
+        {"label": "Total Students", "value": _fmt_int(students)},
+        {"label": "Total Teachers", "value": _fmt_int(teachers)},
         {"label": "PTR", "value": _fmt_ptr(ptr) if ptr is not None else "N/A"},
-        {"label": "STUDENTS/SCHOOL", "value": _fmt_int(sps) if sps is not None else "N/A"},
-        {"label": "TEACHERS/SCHOOL", "value": _fmt_float(tps, 2) if tps is not None else "N/A"},
+        {"label": "Students per School", "value": _fmt_float(sps, 2) if sps is not None else "N/A"},
+        {"label": "Teachers per School", "value": _fmt_float(tps, 2) if tps is not None else "N/A"},
     ]
     _render_kpi_cards(cards, per_row=3)
 
@@ -971,6 +971,7 @@ def _render_metric_cards_overview(agg_data: Dict[str, Any]) -> None:
 # -----------------------------
 # RENDERERS
 # -----------------------------
+
 def render_au_home() -> None:
     # HOME_PARITY_PATCH_V1
     _inject_au_home_css()
@@ -1317,6 +1318,7 @@ def render_au_state_dashboard() -> None:
         st.download_button("📥 Download School Directory CSV", display_df.to_csv(index=False), f"school_directory_{selected_state or 'australia'}.csv", "text/csv")
 
 def render_au_analytics() -> None:
+    # ANALYTICS_PARITY_PATCH_V1
     _inject_au_css()
     st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
@@ -1417,6 +1419,7 @@ def render_au_analytics() -> None:
             st.warning("No data available for selected filters")
 
     with tabs[1]:
+        st.markdown("#### 📊 Key Performance Indicators")
         filter_state = st.selectbox("Select State (All for National)", ["All"] + base_states_df["state_name"].dropna().tolist(), key="au_perf_state")
         if filter_state != "All":
             perf_districts = _safe_district_df(filter_state)
@@ -1563,6 +1566,7 @@ def render_au_analytics() -> None:
                     st.download_button("📊 Download Excel", buffer.getvalue(), "au_custom_report.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # === INDIA_PARITY_OVERRIDE_AU ===
+
 def _au_unique_values(df: pd.DataFrame, col: str) -> list[str]:
     if df is None or df.empty or col not in df.columns:
         return []

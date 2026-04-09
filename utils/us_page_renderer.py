@@ -1258,6 +1258,7 @@ def _inject_analytics_parity_css():
 
 
 def render_us_analytics():
+    # ANALYTICS_PARITY_PATCH_V1
     _inject_css()
     _inject_analytics_parity_css()
     if not _phase1_ready():

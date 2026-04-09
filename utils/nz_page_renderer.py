@@ -836,10 +836,11 @@ def _load_nz_analytics_school_frame():
 
 
 def render_nz_analytics() -> None:
+    # ANALYTICS_PARITY_PATCH_V1
     inject_professional_css()
 
-    st.markdown("# 📈 Analytics Dashboard")
-    st.markdown("**Advanced Educational Analytics - New Zealand**")
+    st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
 
     df = _load_nz_analytics_school_frame()
     if df is None or df.empty:
@@ -874,9 +875,11 @@ def render_nz_analytics() -> None:
     # TAB 1: Geographic Maps (India-style structure)
     # =========================================================
     with tabs[0]:
+        st.markdown("### 🗺️ Geographic Heatmaps")
+        st.markdown("Interactive maps showing PTR, enrollment density by regional council/territorial authority")
         metric_label = st.selectbox(
             "Select Metric to Visualize",
-            ["PTR", "Students per School", "Total Students", "Total Schools"],
+            ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
             index=0,
             key="nz_analytics_geo_metric"
         )
@@ -932,7 +935,7 @@ def render_nz_analytics() -> None:
             )
 
             metric_map = {
-                "PTR": "ptr",
+                "PTR (Pupil-Teacher Ratio)": "ptr",
                 "Students per School": "students_per_school",
                 "Total Students": "total_students",
                 "Total Schools": "total_schools",
@@ -950,7 +953,7 @@ def render_nz_analytics() -> None:
                     chart_df,
                     x=entity_col,
                     y=metric_col,
-                    title=f"Top 20 {level}s by {metric_label}",
+                    title=f"{metric_label} by {level} (Top 20)",
                     hover_data=["total_schools", "total_students", "total_teachers"],
                     labels={
                         entity_col: level,
@@ -982,6 +985,7 @@ def render_nz_analytics() -> None:
     # TAB 2: Performance Metrics (India-style structure)
     # =========================================================
     with tabs[1]:
+        st.markdown("#### 📊 Key Performance Indicators")
         region_options = ["All"] + sorted([
             x for x in df.get("regional_council", pd.Series(dtype=str)).dropna().astype(str).unique().tolist() if x
         ])
@@ -1033,6 +1037,8 @@ def render_nz_analytics() -> None:
     # TAB 3: Comparative Analysis (India-style structure)
     # =========================================================
     with tabs[2]:
+        st.markdown("### 🔍 Comparative Analysis Tool")
+        st.markdown("Compare two locations side-by-side across all key metrics")
         compare_level = st.radio(
             "Comparison Level",
             ["Regional Council vs Regional Council", "Territorial Authority vs Territorial Authority"],
@@ -1065,7 +1071,7 @@ def render_nz_analytics() -> None:
             region_a = col1.selectbox("Location A", region_options, index=0, key="nz_compare_region_a")
             region_b = col2.selectbox("Location B", region_options, index=min(1, len(region_options)-1), key="nz_compare_region_b")
 
-            if st.button("Compare", key="nz_compare_btn_region"):
+            if st.button("🔄 Compare", type="primary", key="nz_compare_btn_region"):
                 compare_label_a = region_a
                 compare_label_b = region_b
                 df_a = df[df["regional_council"] == region_a].copy()
@@ -1100,7 +1106,7 @@ def render_nz_analytics() -> None:
             ta_a = c3.selectbox("Location A", ta_options_a, index=0, key="nz_compare_ta_a")
             ta_b = c4.selectbox("Location B", ta_options_b, index=min(1, len(ta_options_b)-1) if ta_options_b else 0, key="nz_compare_ta_b")
 
-            if st.button("Compare", key="nz_compare_btn_ta"):
+            if st.button("🔄 Compare", type="primary", key="nz_compare_btn_ta"):
                 compare_label_a = ta_a
                 compare_label_b = ta_b
                 df_a = df[(df["regional_council"] == region_a) & (df["territorial_authority"] == ta_a)].copy()
@@ -1122,7 +1128,7 @@ def render_nz_analytics() -> None:
             st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
             st.download_button(
-                label="Download Comparison CSV",
+                label="📥 Download Comparison CSV",
                 data=comparison_df.to_csv(index=False).encode("utf-8"),
                 file_name="nz_analytics_comparison.csv",
                 mime="text/csv",
@@ -1134,6 +1140,8 @@ def render_nz_analytics() -> None:
     # TAB 4: Custom Reports (India-style structure)
     # =========================================================
     with tabs[3]:
+        st.markdown("### 📝 Custom Report Builder")
+        st.markdown("Build custom reports with flexible dimensions and metrics")
         dimension_options = [
             "Regional Council",
             "Territorial Authority",
@@ -1162,7 +1170,7 @@ def render_nz_analytics() -> None:
             key="nz_report_metrics"
         )
 
-        generate_report = st.button("Generate Report", key="nz_generate_report")
+        generate_report = st.button("📊 Generate Report", type="primary", key="nz_generate_report")
 
         if generate_report:
             if not selected_dimensions:
@@ -1227,7 +1235,7 @@ def render_nz_analytics() -> None:
                     st.dataframe(report, use_container_width=True, hide_index=True)
 
                     st.download_button(
-                        label="Download CSV",
+                        label="📥 Download CSV",
                         data=report.to_csv(index=False).encode("utf-8"),
                         file_name="nz_analytics_custom_report.csv",
                         mime="text/csv",
@@ -1239,7 +1247,7 @@ def render_nz_analytics() -> None:
                         with pd.ExcelWriter(output, engine="openpyxl") as writer:
                             report.to_excel(writer, index=False, sheet_name="Report")
                         st.download_button(
-                            label="Download Excel",
+                            label="📊 Download Excel",
                             data=output.getvalue(),
                             file_name="nz_analytics_custom_report.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1248,3 +1256,4 @@ def render_nz_analytics() -> None:
                         st.info("Excel export is unavailable in the current environment.")
 
     _render_nz_footer()
+

@@ -1672,6 +1672,7 @@ def _uae_tab_demographics(filters):
 
 
 def render_uae_analytics():
+    # ANALYTICS_PARITY_PATCH_V1
     from io import BytesIO
 
     _inject_css()
@@ -1763,7 +1764,7 @@ def render_uae_analytics():
 
     def _metric_view(df, metric_name):
         mapping = {
-            'PTR': 'PTR',
+            'PTR (Pupil-Teacher Ratio)': 'PTR',
             'Students per School': 'Students per School',
             'Total Students': 'Total Students',
             'Total Schools': 'Total Schools',
@@ -1777,13 +1778,15 @@ def render_uae_analytics():
     tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
 
     with tabs[0]:
+        st.markdown("### 🗺️ Geographic Heatmaps")
+        st.markdown("Interactive maps showing PTR, enrollment density by emirate/curriculum")
         geo_metric = st.selectbox(
             "Select Metric to Visualize",
-            ["PTR", "Students per School", "Total Students", "Total Schools"],
+            ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
             key="uae_geo_metric_parity"
         )
         geo_level = st.radio(
-            "Select Level",
+            "Level",
             ["Emirate", "Curriculum"],
             horizontal=True,
             key="uae_geo_level_parity"
@@ -1808,7 +1811,7 @@ def render_uae_analytics():
                 y="Metric Value",
                 color="Metric Value",
                 color_continuous_scale="Blues",
-                title=f"Top 20 {geo_level}s by {geo_metric}",
+                title=f"{geo_metric} by {geo_level} (Top 20)",
             )
             fig.update_layout(
                 xaxis_tickangle=-45,
@@ -1820,6 +1823,7 @@ def render_uae_analytics():
             st.dataframe(view_df, use_container_width=True, hide_index=True)
 
     with tabs[1]:
+        st.markdown("#### 📊 Key Performance Indicators")
         perf_emirate = st.selectbox(
             "Select Emirate",
             emirate_options,
@@ -1862,6 +1866,8 @@ def render_uae_analytics():
             st.metric("🏫 Teachers / School", f"{(teachers_num / schools_num):,.2f}" if schools_num else "0.00")
 
     with tabs[2]:
+        st.markdown("### 🔍 Comparative Analysis Tool")
+        st.markdown("Compare two locations side-by-side across all key metrics")
         comparison_level = st.radio(
             "Comparison Level",
             ["Emirate vs Emirate", "Curriculum vs Curriculum"],
@@ -1887,7 +1893,7 @@ def render_uae_analytics():
             remaining = [x for x in compare_options if x != loc_a] or compare_options
             loc_b = st.selectbox(label_b, remaining, key="uae_compare_b_parity") if remaining else None
 
-        if st.button("Compare", key="uae_compare_button_parity"):
+        if st.button("🔄 Compare", type="primary", key="uae_compare_button_parity"):
             if compare_df.empty or not loc_a or not loc_b:
                 st.info("Not enough data available to compare the selected locations.")
             else:
@@ -1902,20 +1908,22 @@ def render_uae_analytics():
                 )
 
     with tabs[3]:
+        st.markdown("### 📝 Custom Report Builder")
+        st.markdown("Build custom reports with flexible dimensions and metrics")
         report_dimensions = st.multiselect(
-            "Select Dimensions",
+            "Choose grouping dimensions",
             ["Emirate", "Curriculum", "School Level"],
             default=["Emirate"],
             key="uae_report_dims_parity"
         )
         report_metrics = st.multiselect(
-            "Select Metrics",
+            "Choose metrics to include",
             ["Total Schools", "Total Students", "Total Teachers", "PTR"],
             default=["Total Schools"],
             key="uae_report_metrics_parity"
         )
 
-        if st.button("Generate Report", key="uae_generate_report_parity"):
+        if st.button("📊 Generate Report", type="primary", key="uae_generate_report_parity"):
             src = _uae_school_directory_summary(_clone_filters())
             if src is None or src.empty:
                 st.info("No data available for the selected report dimensions.")
@@ -1971,7 +1979,7 @@ def render_uae_analytics():
                         with pd.ExcelWriter(excel_buffer) as writer:
                             report.to_excel(writer, index=False, sheet_name="Custom Report")
                         st.download_button(
-                            "📥 Download Excel",
+                            "📊 Download Excel",
                             excel_buffer.getvalue(),
                             "uae_custom_report.xlsx",
                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1981,6 +1989,7 @@ def render_uae_analytics():
                         pass
 
     _render_footer()
+
 def _uae_analytics_geo(filters):
     st.markdown('<div class="uae-section-header">🗺️ Geographic Distribution</div>', unsafe_allow_html=True)
 
