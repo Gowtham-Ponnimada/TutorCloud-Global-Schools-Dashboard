@@ -523,280 +523,212 @@ def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = Non
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render_uae_home():
+    # HOME_PARITY_PATCH_V1
     if _inject_css:
         _inject_css()
     st.markdown(UAE_CSS, unsafe_allow_html=True)
 
-    # ── Header (matches India: main-header + sub-header) ──────────────────────
     st.markdown("# 🏠 TutorCloud Global Dashboard")
     st.markdown("**National K-12 Education Overview - UAE 2024-2025**")
     st.markdown("---")
 
-    # No sidebar filters on Home page (matches India Home)
-    filters = {}  # empty – no sidebar filtering on Home
+    filters = {}
 
-    # ── Gather column names ────────────────────────────────────────────────────
-    enr_cols    = _tbl_cols("uae_fact_enrollment")
-    sch_cols    = _tbl_cols("uae_fact_schools")
-    tch_cols    = _tbl_cols("uae_fact_teachers_emirate")
+    enr_cols = _tbl_cols("uae_fact_enrollment")
+    sch_cols = _tbl_cols("uae_fact_schools")
+    tch_cols = _tbl_cols("uae_fact_teachers_emirate")
 
     emirate_col = _pick_col(enr_cols, "region_en", "emirate", "emirate_en", "region")
     enr_cnt_col = _pick_col(enr_cols, "student_count", "enrollment_count", "students", "count")
     sch_cnt_col = _pick_col(sch_cols, "school_count", "num_schools", "count")
     tch_cnt_col = _pick_col(tch_cols, "teacher_count", "num_teachers", "count", "teachers")
-    gender_col  = _pick_col(enr_cols, "gender", "student_gender")
+    sch_em_col = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
 
-    where, params = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
+    where_enr, params_enr = _where_clause(filters, allowed_cols=enr_cols, table_name="uae_fact_enrollment")
+    where_sch, params_sch = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
+    where_tch, params_tch = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # KPI SECTION  ── 6 metrics in 2 rows (same structure as India)
-    # ─────────────────────────────────────────────────────────────────────────
-    st.markdown("## 📊 National Overview")
-
-    # Row 1: Emirates, Schools, Students
-    col1, col2, col3 = st.columns(3)
-
-    # Emirates count
-    em_count = 0
+    emirates_count = 0
     if emirate_col:
-        df = _q(f"SELECT COUNT(DISTINCT {emirate_col}) FROM uae.uae_fact_enrollment WHERE academic_year=%s",
-                [UAE_YEAR])
-        em_count = int(df.iloc[0, 0]) if not df.empty else 0
+        df = _q(
+            f"SELECT COUNT(DISTINCT {emirate_col}) FROM uae.uae_fact_enrollment WHERE academic_year=%s",
+            [UAE_YEAR],
+        )
+        emirates_count = int(df.iloc[0, 0]) if not df.empty and pd.notna(df.iloc[0, 0]) else 0
 
-    # Total schools
     total_sch = 0
     if sch_cnt_col:
-        sch_where, sch_params = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
-        df = _q(f"SELECT COALESCE(SUM({sch_cnt_col}),0) FROM uae.uae_fact_schools WHERE academic_year=%s{sch_where}",
-                [UAE_YEAR] + sch_params)
-        total_sch = int(df.iloc[0, 0]) if not df.empty else 0
+        df = _q(
+            f"SELECT COALESCE(SUM({sch_cnt_col}),0) FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch}",
+            [UAE_YEAR] + params_sch,
+        )
+        total_sch = int(df.iloc[0, 0]) if not df.empty and pd.notna(df.iloc[0, 0]) else 0
 
-    # Total students
     total_enr = 0
     if enr_cnt_col:
-        df = _q(f"SELECT COALESCE(SUM({enr_cnt_col}),0) FROM uae.uae_fact_enrollment WHERE academic_year=%s{where}",
-                [UAE_YEAR] + params)
-        total_enr = int(df.iloc[0, 0]) if not df.empty else 0
+        df = _q(
+            f"SELECT COALESCE(SUM({enr_cnt_col}),0) FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr}",
+            [UAE_YEAR] + params_enr,
+        )
+        total_enr = int(df.iloc[0, 0]) if not df.empty and pd.notna(df.iloc[0, 0]) else 0
 
-    with col1:
-        st.metric("TOTAL EMIRATES", str(em_count), help="States with data coverage")
-    with col2:
-        st.metric("TOTAL SCHOOLS", _fmt(total_sch), help="Total Schools")
-    with col3:
-        st.metric("TOTAL STUDENTS", _fmt(total_enr), help="Total Students")
-
-    # Row 2: Teachers, PTR, Students/School
-    col4, col5, col6 = st.columns(3)
-
-    # Total teachers
     total_tch = 0
     if tch_cnt_col:
-        tch_where, tch_params = _where_clause(filters, allowed_cols=tch_cols, table_name="uae_fact_teachers_emirate")
-        df = _q(f"SELECT COALESCE(SUM({tch_cnt_col}),0) FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{tch_where}",
-                [UAE_YEAR] + tch_params)
-        total_tch = int(df.iloc[0, 0]) if not df.empty else 0
+        df = _q(
+            f"SELECT COALESCE(SUM({tch_cnt_col}),0) FROM uae.uae_fact_teachers_emirate WHERE academic_year=%s{where_tch}",
+            [UAE_YEAR] + params_tch,
+        )
+        total_tch = int(df.iloc[0, 0]) if not df.empty and pd.notna(df.iloc[0, 0]) else 0
 
-    # PTR – integer ratio matching India format_ptr()
     ptr_str = _fmt_ptr(total_enr, total_tch)
+    sps_str = _fmt(int(round(total_enr / total_sch))) if total_sch > 0 and total_enr > 0 else "N/A"
 
-    # Students per school – whole number with commas, matching India
-    sps_str = "N/A"
-    if total_sch > 0 and total_enr > 0:
-        sps_str = _fmt(int(round(total_enr / total_sch)))
+    st.markdown("## 📊 National Overview")
+    col1, col2, col3 = st.columns(3)
+    col4, col5, col6 = st.columns(3)
 
-    # % Female
-    pct_female = None
-    if gender_col and enr_cnt_col:
-        df = _q(
-            f"SELECT {gender_col}, SUM({enr_cnt_col}) AS cnt FROM uae.uae_fact_enrollment "
-            f"WHERE academic_year=%s GROUP BY {gender_col}", [UAE_YEAR]
-        )
-        if not df.empty:
-            df.columns = ["gender", "cnt"]
-            total_g = df["cnt"].sum()
-            fem = df[df["gender"].str.lower().str.startswith("f", na=False)]["cnt"].sum()
-            if total_g > 0:
-                pct_female = round(fem / total_g * 100, 1)
-
+    with col1:
+        st.metric("TOTAL EMIRATES", str(emirates_count))
+    with col2:
+        st.metric("TOTAL SCHOOLS", _fmt(total_sch))
+    with col3:
+        st.metric("TOTAL STUDENTS", _fmt(total_enr))
     with col4:
-        st.metric("TOTAL TEACHERS", _fmt(total_tch), help="Total Teachers")
+        st.metric("TOTAL TEACHERS", _fmt(total_tch))
     with col5:
-        st.metric("PTR (NATIONAL)", ptr_str, help="PTR")
+        st.metric("PTR (NATIONAL)", ptr_str)
     with col6:
-        st.metric("STUDENTS/SCHOOL", sps_str, help="Students/School")
+        st.metric("STUDENTS/SCHOOL", sps_str)
 
-    st.markdown("---")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    
-    # ─────────────────────────────────────────────────────────────────────────
-    # CHART 1: Top Emirates by School Count
-    # ─────────────────────────────────────────────────────────────────────────
-    st.markdown("## 🏫 Top Emirates by School Count")
-    if emirate_col and sch_cnt_col:
-        sch_em_col = _pick_col(sch_cols, "region_en", "emirate", "emirate_en", "region")
-        if sch_em_col:
-            sch_where, sch_params = _where_clause(filters, allowed_cols=sch_cols, table_name="uae_fact_schools")
-            df_sch = _q(
-                f"SELECT {sch_em_col} AS emirate, SUM({sch_cnt_col}) AS schools "
-                f"FROM uae.uae_fact_schools WHERE academic_year=%s{sch_where} "
-                f"GROUP BY {sch_em_col} ORDER BY schools DESC",
-                [UAE_YEAR] + sch_params
-            )
-            if not df_sch.empty:
-                fig2 = px.bar(
-                    df_sch, x="emirate", y="schools",
-                    color="schools",
-                    color_continuous_scale=["#FFF0F0", "#C8102E"],
-                    text="schools",
-                    labels={"emirate": "Emirate", "schools": "Schools"},
-                )
-                fig2.update_traces(
-                    texttemplate="%{text:,.0f}",
-                    textposition="outside",
-                    marker_line_color="white",
-                    marker_line_width=1.5
-                )
-                fig2.update_layout(
-                    height=480,
-                    plot_bgcolor="white",
-                    paper_bgcolor="white",
-                    font=dict(family="Segoe UI", size=11),
-                    showlegend=False,
-                    xaxis=dict(showgrid=False, title="", tickfont=dict(size=11), tickangle=-45),
-                    yaxis=dict(showgrid=True, gridcolor="#F0F0F0", title="Schools"),
-                    margin=dict(l=70, r=50, t=50, b=150),
-                    coloraxis_showscale=False
-                )
-                st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # CHART 2: Top Emirates by Student Enrollment
-    # ─────────────────────────────────────────────────────────────────────────
-    st.markdown("## 🏆 Top Emirates by Student Enrollment")
-    if emirate_col and enr_cnt_col:
-        df = _q(
-            f"SELECT {emirate_col} AS emirate, SUM({enr_cnt_col}) AS students "
-            f"FROM uae.uae_fact_enrollment WHERE academic_year=%s{where} "
-            f"GROUP BY {emirate_col} ORDER BY students DESC",
-            [UAE_YEAR] + params
+    st.markdown("## 🏆 Top 10 Emirates by School Count")
+    if sch_em_col and sch_cnt_col:
+        df_sch = _q(
+            f"SELECT {sch_em_col} AS emirate, SUM({sch_cnt_col}) AS total_schools FROM uae.uae_fact_schools WHERE academic_year=%s{where_sch} GROUP BY {sch_em_col} ORDER BY total_schools DESC LIMIT 10",
+            [UAE_YEAR] + params_sch,
         )
-        if not df.empty:
+        if not df_sch.empty:
             fig = px.bar(
-                df, x="emirate", y="students",
-                color="students",
-                color_continuous_scale=["#EAF4EA", "#006400"],
-                text="students",
-                labels={"emirate": "Emirate", "students": "Students"},
+                df_sch,
+                x='emirate',
+                y='total_schools',
+                labels={'total_schools': 'Total Schools', 'emirate': ''},
+                color='total_schools',
+                color_continuous_scale=['#E3F2FD', '#1E88E5'],
+                text='total_schools',
             )
-            fig.update_traces(
-                texttemplate="%{text:,.0f}",
-                textposition="outside",
-                marker_line_color="white",
-                marker_line_width=1.5
-            )
-            fig.update_layout(
-                height=480,
-                plot_bgcolor="white",
-                paper_bgcolor="white",
-                font=dict(family="Segoe UI", size=11),
-                showlegend=False,
-                xaxis=dict(showgrid=False, title="", tickfont=dict(size=11), tickangle=-45),
-                yaxis=dict(showgrid=True, gridcolor="#F0F0F0", title="Students"),
-                margin=dict(l=70, r=50, t=50, b=150),
-                coloraxis_showscale=False
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=11)
+            fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 11}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=10)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Schools'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # KEY INSIGHTS
-    # ─────────────────────────────────────────────────────────────────────────
+    st.markdown("## 📚 Top 20 Emirates by Student Enrollment")
+    if emirate_col and enr_cnt_col:
+        df_enr = _q(
+            f"SELECT {emirate_col} AS emirate, SUM({enr_cnt_col}) AS total_students FROM uae.uae_fact_enrollment WHERE academic_year=%s{where_enr} GROUP BY {emirate_col} ORDER BY total_students DESC LIMIT 20",
+            [UAE_YEAR] + params_enr,
+        )
+        if not df_enr.empty:
+            fig = px.bar(
+                df_enr,
+                x='emirate',
+                y='total_students',
+                labels={'total_students': 'Total Students', 'emirate': ''},
+                color='total_students',
+                color_continuous_scale=['#E3F2FD', '#1E88E5'],
+                text='total_students',
+            )
+            fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=10)
+            fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 10}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=9)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Students'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
     st.markdown("## 💡 Key Insights")
-
-    ins1, ins2, ins3 = st.columns(3)
-    with ins1:
+    insight_col1, insight_col2, insight_col3 = st.columns(3)
+    with insight_col1:
         st.info(f"""
-**📚 School Coverage**
+        **📚 School Coverage**
 
-UAE has **{_fmt(total_sch)}** schools serving
-**{_fmt(total_enr)}** students across
-**{em_count}** Emirates.
+        UAE has **{_fmt(total_sch)}** schools serving **{_fmt(total_enr)}** students across **{emirates_count}** Emirates.
         """)
-    with ins2:
+    with insight_col2:
         st.success(f"""
-**👨‍🏫 Teaching Staff**
+        **👨‍🏫 Teaching Staff**
 
-With **{_fmt(total_tch)}** teachers nationwide,
-the national PTR stands at **{ptr_str}**,
-reflecting the student-to-teacher ratio.
+        With **{_fmt(total_tch)}** teachers nationwide, the national PTR stands at **{ptr_str}**, indicating the student-to-teacher ratio.
         """)
-    with ins3:
-        st.info(f"""
-**🏫 School Size**
+    with insight_col3:
+        st.warning(f"""
+        **🏫 School Size**
 
-On average, each UAE school serves
-**{sps_str}** students —
-reflecting the scale of UAE's education institutions.
+        Average school size is **{sps_str}** students per school, with variation across Emirates and education types.
         """)
 
     st.markdown("## 🧭 Explore More")
-    nav1, nav2 = st.columns(2)
-    with nav1:
+    nav_col1, nav_col2 = st.columns(2)
+    with nav_col1:
         st.markdown("""
-<a href="/State_Dashboard?region=UAE" target="_blank" style="
-    display:inline-block; width:100%; padding:1rem;
-    background:linear-gradient(135deg,#006400 0%,#008000 100%);
-    color:white!important; text-align:center; text-decoration:none!important;
-    border-radius:8px; font-weight:700; font-size:1.1rem;
-    box-shadow:0 4px 12px rgba(0,0,0,.2); border:3px solid #006400;
-    transition:all 0.3s ease;">
-    📊 State Dashboard
-</a>
-""", unsafe_allow_html=True)
+        <a href="/State_Dashboard?region=UAE" target="_blank" style="
+            display: inline-block;
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white !important;
+            text-align: center;
+            text-decoration: none !important;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            border: 3px solid #1e88e5;
+        ">
+            📊 State Dashboard
+        </a>
+        """, unsafe_allow_html=True)
         st.markdown("""
-<div style="padding:0.5rem;color:#757575;font-size:.9rem;">
-Drill into emirate-level data with advanced filtering.
-<ul style="margin-top:.5rem;">
-    <li>Filter by emirate, curriculum, gender</li>
-    <li>Compare across education types</li>
-    <li>Export detailed reports</li>
-</ul>
-</div>
-""", unsafe_allow_html=True)
-    with nav2:
+        <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
+        Drill down into emirate-level data with advanced filtering.
+        <ul style='margin-top: 0.5rem;'>
+            <li>Filter by curriculum, education type, gender</li>
+            <li>Compare across Emirates</li>
+            <li>Export detailed reports</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
+    with nav_col2:
         st.markdown("""
-<a href="/Analytics?region=UAE" target="_blank" style="
-    display:inline-block; width:100%; padding:1rem;
-    background:linear-gradient(135deg,#C8102E 0%,#990000 100%);
-    color:white!important; text-align:center; text-decoration:none!important;
-    border-radius:8px; font-weight:700; font-size:1.1rem;
-    box-shadow:0 4px 12px rgba(0,0,0,.2); border:3px solid #C8102E;
-    transition:all 0.3s ease;">
-    📈 Analytics
-</a>
-""", unsafe_allow_html=True)
+        <a href="/Analytics?region=UAE" target="_blank" style="
+            display: inline-block;
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white !important;
+            text-align: center;
+            text-decoration: none !important;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            border: 3px solid #1e88e5;
+        ">
+            📈 Analytics
+        </a>
+        """, unsafe_allow_html=True)
         st.markdown("""
-<div style="padding:0.5rem;color:#757575;font-size:.9rem;">
-Interactive analytics with geographic maps and custom reports.
-<ul style="margin-top:.5rem;">
-    <li>Geographic distribution charts</li>
-    <li>Comparative emirate analysis</li>
-    <li>Custom report builder</li>
-</ul>
-</div>
-""", unsafe_allow_html=True)
+        <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
+        Interactive analytics with geographic maps, performance metrics, and custom reports.
+        <ul style='margin-top: 0.5rem;'>
+            <li>Geographic distribution charts</li>
+            <li>Comparative emirate analysis</li>
+            <li>Custom report builder</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Footer
-    st.markdown('---')
+    st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #757575; font-size: clamp(0.8rem, 2vw, 0.9rem);'><p><strong>TutorCloud Global Dashboard</strong></p><p>© 2026 TutorCloud. All rights reserved.</p></div>",
         unsafe_allow_html=True,
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. STATE DASHBOARD (UAE = Emirates)  ── mirrors India State Dashboard
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _uae_scalar_value(sql: str, params=None, default=0):
     df = _q(sql, params)

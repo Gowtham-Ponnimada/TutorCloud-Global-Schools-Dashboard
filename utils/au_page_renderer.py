@@ -972,39 +972,154 @@ def _render_metric_cards_overview(agg_data: Dict[str, Any]) -> None:
 # RENDERERS
 # -----------------------------
 def render_au_home() -> None:
+    # HOME_PARITY_PATCH_V1
     _inject_au_home_css()
     svc = _get_service()
     summary = svc.get_national_summary() or {}
     states_df = _safe_state_df()
+
     total_states = states_df["state_name"].nunique() if not states_df.empty and "state_name" in states_df.columns else 0
-    teachers = summary.get("fte_teaching_staff")
-    schools = summary.get("schools")
-    students = summary.get("total_students")
-    students_per_school = round(_num(students) / _num(schools)) if _num(schools) > 0 else None
+    total_schools = summary.get("schools")
+    total_students = summary.get("total_students")
+    total_teachers = summary.get("fte_teaching_staff")
+    ptr_value = summary.get("student_teacher_ratio")
+    students_per_school = round(_num(total_students) / _num(total_schools)) if _num(total_schools) > 0 else None
 
     st.markdown("# 🏠 TutorCloud Global Dashboard")
     st.markdown("**National K-12 Education Overview - Australia 2025**")
     st.markdown("---")
+
     st.markdown("## 📊 National Overview")
+    c1, c2, c3 = st.columns(3)
+    c4, c5, c6 = st.columns(3)
+    c1.metric("TOTAL STATES/TERRITORIES", _fmt_int(total_states))
+    c2.metric("TOTAL SCHOOLS", _fmt_int(total_schools))
+    c3.metric("TOTAL STUDENTS", _fmt_int(total_students))
+    c4.metric("TOTAL TEACHERS", _fmt_int(total_teachers))
+    c5.metric("PTR (NATIONAL)", _fmt_ptr(ptr_value))
+    c6.metric("STUDENTS/SCHOOL", _fmt_int(students_per_school) if students_per_school is not None else "N/A")
 
-    cards = [
-        {"label": "TOTAL STATES/UTS", "value": _fmt_int(total_states)},
-        {"label": "TOTAL SCHOOLS", "value": _fmt_int(schools)},
-        {"label": "TOTAL STUDENTS", "value": _fmt_int(students)},
-        {"label": "TOTAL TEACHERS", "value": _fmt_int(teachers)},
-        {"label": "PTR (NATIONAL)", "value": _fmt_ptr(summary.get("student_teacher_ratio"))},
-        {"label": "STUDENTS/SCHOOL", "value": _fmt_int(students_per_school)},
-    ]
-    _render_kpi_cards(cards, per_row=3)
+    st.markdown("## 🏆 Top 10 States/Territories by School Count")
+    if not states_df.empty and {'state_name', 'schools'}.issubset(states_df.columns):
+        df_sch = states_df.sort_values('schools', ascending=False).head(10).copy()
+        fig = px.bar(
+            df_sch,
+            x='state_name',
+            y='schools',
+            labels={'schools': 'Total Schools', 'state_name': ''},
+            color='schools',
+            color_continuous_scale=['#E3F2FD', '#1E88E5'],
+            text='schools',
+        )
+        fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=11)
+        fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 11}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=10)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Schools'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-    st.markdown("<div style='height: 22px;'></div>", unsafe_allow_html=True)
-    st.markdown("## 🏆 Top 10 States by School Count")
-    if not states_df.empty:
-        df = states_df.sort_values("schools", ascending=False).head(10)
-        fig = px.bar(df, x="state_name", y="schools", color_discrete_sequence=[INDIA_UI["schools"]])
-        fig = _style_chart(fig, title="", x_title="State Name", y_title="Schools", height=420)
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("## 📚 Top 20 States/Territories by Student Enrollment")
+    if not states_df.empty and {'state_name', 'total_students'}.issubset(states_df.columns):
+        df_std = states_df.sort_values('total_students', ascending=False).head(20).copy()
+        fig = px.bar(
+            df_std,
+            x='state_name',
+            y='total_students',
+            labels={'total_students': 'Total Students', 'state_name': ''},
+            color='total_students',
+            color_continuous_scale=['#E3F2FD', '#1E88E5'],
+            text='total_students',
+        )
+        fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=10)
+        fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 10}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=9)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Students'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
+    st.markdown("## 💡 Key Insights")
+    i1, i2, i3 = st.columns(3)
+    with i1:
+        st.info(f"""
+        **📚 School Coverage**
+
+        Australia has **{_fmt_int(total_schools)}** schools serving **{_fmt_int(total_students)}** students across **{_fmt_int(total_states)}** states and territories.
+        """)
+    with i2:
+        st.success(f"""
+        **👨‍🏫 Teaching Staff**
+
+        With **{_fmt_int(total_teachers)}** teachers nationwide, the national PTR stands at **{_fmt_ptr(ptr_value)}**, indicating the student-to-teacher ratio.
+        """)
+    with i3:
+        st.warning(f"""
+        **🏫 School Size**
+
+        Average school size is **{_fmt_int(students_per_school) if students_per_school is not None else 'N/A'}** students per school, with variation across states and territories.
+        """)
+
+    st.markdown("## 🧭 Explore More")
+    nav1, nav2 = st.columns(2)
+    with nav1:
+        st.markdown("""
+        <a href="/State_Dashboard?region=Australia" target="_blank" style="
+            display: inline-block;
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white !important;
+            text-align: center;
+            text-decoration: none !important;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            border: 3px solid #1e88e5;
+        ">
+            📊 State Dashboard
+        </a>
+        """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
+        Drill down into state, district, and local-area data with advanced filtering.
+        <ul style='margin-top: 0.5rem;'>
+            <li>Filter by school level and management type</li>
+            <li>Compare across states and territories</li>
+            <li>Export detailed reports</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
+    with nav2:
+        st.markdown("""
+        <a href="/Analytics?region=Australia" target="_blank" style="
+            display: inline-block;
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+            color: white !important;
+            text-align: center;
+            text-decoration: none !important;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            border: 3px solid #1e88e5;
+        ">
+            📈 Analytics
+        </a>
+        """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
+        Interactive analytics with geographic maps, performance metrics, and custom reports.
+        <ul style='margin-top: 0.5rem;'>
+            <li>Geographic heatmaps</li>
+            <li>Comparative analysis</li>
+            <li>Custom report builder</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #757575; font-size: clamp(0.8rem, 2vw, 0.9rem);'><p><strong>TutorCloud Global Dashboard</strong></p><p>© 2026 TutorCloud. All rights reserved.</p></div>",
+        unsafe_allow_html=True,
+    )
 
 def render_au_state_dashboard() -> None:
     _inject_au_css()

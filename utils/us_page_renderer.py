@@ -888,6 +888,7 @@ def _render_footer():
 
 
 def render_us_home():
+    # HOME_PARITY_PATCH_V1
     _inject_css()
     if not _phase1_ready():
         _render_missing_data_notice()
@@ -895,47 +896,106 @@ def render_us_home():
 
     summary = _national_summary()
 
-    st.markdown("<div class='us-title'>🇺🇸 United States Education Dashboard</div>", unsafe_allow_html=True)
-    st.markdown("<div class='us-subtitle'>National K–12 overview using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
-    st.info("Public metrics use NCES CCD 2024–2025 universe counts. Private metrics use NCES PSS 2021–2022 PFNLWT-weighted estimates. Combined totals are mixed-year and explicitly tagged.")
+    st.markdown("# 🏠 TutorCloud Global Dashboard")
+    st.markdown("**National K-12 Education Overview - United States 2024-2025**")
+    st.markdown("---")
 
+    st.markdown("## 📊 National Overview")
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL STATES/UTs", _fmt_int(summary.get("total_states")))
+    c1.metric("TOTAL STATES", _fmt_int(summary.get("total_states")))
     c2.metric("TOTAL SCHOOLS", _fmt_int(summary.get("total_schools")))
     c3.metric("TOTAL STUDENTS", _fmt_int(summary.get("total_students")))
     c4.metric("TOTAL TEACHERS", _fmt_int(summary.get("total_teachers")))
     c5.metric("PTR (NATIONAL)", _fmt_ptr(summary.get("ptr")))
     c6.metric("STUDENTS/SCHOOL", _fmt_int(summary.get("students_per_school")))
 
-    left, right = st.columns(2)
-    with left:
-        _plot_bar(_top_states_by_schools(10), "state_name", "total_schools", "Top 10 States by School Count")
-    with right:
-        _plot_bar(_top_states_by_students(20), "state_name", "total_students", "Top 20 States by Student Enrollment")
+    st.markdown("## 🏆 Top 10 States by School Count")
+    df_top_schools = _top_states_by_schools(10)
+    if df_top_schools is not None and not df_top_schools.empty:
+        fig = px.bar(
+            df_top_schools,
+            x='state_name',
+            y='total_schools',
+            labels={'total_schools': 'Total Schools', 'state_name': ''},
+            color='total_schools',
+            color_continuous_scale=['#E3F2FD', '#1E88E5'],
+            text='total_schools',
+        )
+        fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=11)
+        fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 11}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=10)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Schools'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-    st.markdown("### 💡 Key Insights")
+    st.markdown("## 📚 Top 20 States by Student Enrollment")
+    df_top_students = _top_states_by_students(20)
+    if df_top_students is not None and not df_top_students.empty:
+        fig = px.bar(
+            df_top_students,
+            x='state_name',
+            y='total_students',
+            labels={'total_students': 'Total Students', 'state_name': ''},
+            color='total_students',
+            color_continuous_scale=['#E3F2FD', '#1E88E5'],
+            text='total_students',
+        )
+        fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=10)
+        fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 10}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=9)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Students'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+    st.markdown("## 💡 Key Insights")
     i1, i2, i3 = st.columns(3)
     with i1:
-        st.info(f"**School Coverage**\n\nThe 2024–2025 US dataset covers **{_fmt_int(summary.get('total_schools'))}** public schools across **{_fmt_int(summary.get('total_states'))}** states and jurisdictions.")
-    with i2:
-        st.success(f"**Teaching Staff**\n\nThe loaded Final v1a layer includes **{_fmt_int(summary.get('total_teachers'))}** teachers, supporting a national PTR of **{_fmt_ptr(summary.get('ptr'))}** where staff totals are reported.")
-    with i3:
-        st.warning(f"**School Size**\n\nAverage public school size is **{_fmt_int(summary.get('students_per_school'))}** students per school based on current 2024–2025 CCD totals.")
+        st.info(f"""
+        **📚 School Coverage**
 
-    st.markdown("### 🧭 Explore More")
+        The United States dashboard covers **{_fmt_int(summary.get('total_schools'))}** schools serving **{_fmt_int(summary.get('total_students'))}** students across **{_fmt_int(summary.get('total_states'))}** states.
+        """)
+    with i2:
+        st.success(f"""
+        **👨‍🏫 Teaching Staff**
+
+        With **{_fmt_int(summary.get('total_teachers'))}** teachers nationwide, the national PTR stands at **{_fmt_ptr(summary.get('ptr'))}**.
+        """)
+    with i3:
+        st.warning(f"""
+        **🏫 School Size**
+
+        Average school size is **{_fmt_int(summary.get('students_per_school'))}** students per school based on the current US summary totals.
+        """)
+
+    st.markdown("## 🧭 Explore More")
     nav1, nav2 = st.columns(2)
     with nav1:
         st.markdown(
             """
             <a href="/State_Dashboard?region=United%20States" target="_blank" style="
-                display: inline-block; width: 100%; padding: 1rem; background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
-                color: white !important; text-align: center; text-decoration: none !important; border-radius: 8px;
-                font-weight: 600; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); border: 3px solid #1e88e5;">
+                display: inline-block;
+                width: 100%;
+                padding: 1rem;
+                background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+                color: white !important;
+                text-align: center;
+                text-decoration: none !important;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 1.1rem;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                transition: all 0.3s ease;
+                border: 3px solid #1e88e5;">
                 📊 State Dashboard
             </a>
-            <div style='padding:.5rem;color:#757575;font-size:.9rem;'>
-                Drill into state and district totals, grade enrollment, city mix, and school-level directory facts.
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
+            Drill down into state and district-level data with advanced filtering.
+            <ul style='margin-top: 0.5rem;'>
+                <li>Filter by school category, management, and district type</li>
+                <li>Compare across regions</li>
+                <li>Export detailed reports</li>
+            </ul>
             </div>
             """,
             unsafe_allow_html=True,
@@ -944,20 +1004,39 @@ def render_us_home():
         st.markdown(
             """
             <a href="/Analytics?region=United%20States" target="_blank" style="
-                display: inline-block; width: 100%; padding: 1rem; background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
-                color: white !important; text-align: center; text-decoration: none !important; border-radius: 8px;
-                font-weight: 600; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); border: 3px solid #1e88e5;">
+                display: inline-block;
+                width: 100%;
+                padding: 1rem;
+                background: linear-gradient(135deg, #1e88e5 0%, #1976d2 100%);
+                color: white !important;
+                text-align: center;
+                text-decoration: none !important;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 1.1rem;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                transition: all 0.3s ease;
+                border: 3px solid #1e88e5;">
                 📈 Analytics
             </a>
-            <div style='padding:.5rem;color:#757575;font-size:.9rem;'>
-                Review geographic coverage, performance proxies, comparative analysis, and build exportable custom reports.
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
+            Interactive analytics with geographic maps, performance metrics, and custom reports.
+            <ul style='margin-top: 0.5rem;'>
+                <li>Geographic heatmaps</li>
+                <li>Comparative analysis</li>
+                <li>Custom report builder</li>
+            </ul>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
     _render_footer()
-
 
 def render_us_state_dashboard():
     _inject_css()
