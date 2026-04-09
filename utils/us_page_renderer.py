@@ -355,31 +355,31 @@ def _district_types(state_name: str = "All") -> list[str]:
 
 def _build_sidebar_filters() -> dict:
     with st.sidebar:
-        st.markdown("### US Filters")
+        st.markdown("## Filters")
         state_opts = ["All"] + _states()
-        state = st.selectbox("Select State", state_opts, index=0, key="us_state")
+        state = st.selectbox("🗺️ Select State", state_opts, index=0, key="us_state")
 
         district_opts = ["All"] + _districts(state)
-        district = st.selectbox("Select District", district_opts, index=0, key="us_district")
+        district = st.selectbox("🏘️ Select District", district_opts, index=0, key="us_district")
 
         city_opts = _cities(state, district)
-        cities = st.multiselect("Select City", city_opts, key="us_cities")
+        cities = st.multiselect("📍 Select City", city_opts, key="us_cities")
 
         delivery_opts = ["All"] + _delivery_models(state, district)
-        delivery_model = st.selectbox("School Type", delivery_opts, index=0, key="us_delivery_model")
+        delivery_model = st.selectbox("📖 School Type", delivery_opts, index=0, key="us_delivery_model")
 
         management_opts = ["All"] + _management_types(state, district)
         management_index = management_opts.index("Govt") if "Govt" in management_opts else 0
-        management_type = st.selectbox("School Management", management_opts, index=management_index, key="us_management_type")
+        management_type = st.selectbox("🏛️ Management Type", management_opts, index=management_index, key="us_management_type")
 
         school_type_opts = _school_types(state, district)
-        school_types = st.multiselect("Institution Type", school_type_opts, key="us_school_types")
+        school_types = st.multiselect("🏫 Institution Type", school_type_opts, key="us_school_types")
 
         district_type_opts = _district_types(state)
-        district_types = st.multiselect("District Type", district_type_opts, key="us_district_types")
+        district_types = st.multiselect("🧭 District Type", district_type_opts, key="us_district_types")
 
         level_opts = _school_levels(state, district)
-        school_levels = st.multiselect("School Category", level_opts, key="us_levels")
+        school_levels = st.multiselect("📚 School Category (Grade Level)", level_opts, key="us_levels")
 
         return {
             "state": state,
@@ -1039,6 +1039,7 @@ def render_us_home():
     _render_footer()
 
 def render_us_state_dashboard():
+    # STATE_DASHBOARD_PARITY_PATCH_V1
     _inject_css()
     if not _phase1_ready():
         _render_missing_data_notice()
@@ -1048,8 +1049,10 @@ def render_us_state_dashboard():
     title_state = filters.get("state") if filters.get("state") and filters.get("state") != "All" else "All States"
     if filters.get("district") and filters.get("district") != "All":
         title_state = f"{title_state} / {filters.get('district')}"
-    st.markdown(f"<div class='us-title'>📊 US State Dashboard — {title_state}</div>", unsafe_allow_html=True)
-    st.markdown("<div class='us-subtitle'>Comprehensive state-level analysis with advanced US-equivalent filters.</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='main-header'>📊 State Dashboard</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sub-header'>Comprehensive State-Level Analysis with Advanced Filters</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-header'>📊 Overview: {title_state}</div>", unsafe_allow_html=True)
+    # subtitle handled by state dashboard parity patch
     if filters.get("management_type") in ("All", "Private"):
         st.info("School Management includes NCES PSS private-school data from 2021–2022. Public-school data remains CCD 2024–2025. Grade-level enrollment detail remains public-only for now.")
     if filters.get("management_type") in ("All", "Private"):
@@ -1058,12 +1061,12 @@ def render_us_state_dashboard():
     k = _state_dashboard_kpis(filters)
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL SCHOOLS", _fmt_int(k.get("total_schools")))
-    c2.metric("SCHOOLS WITH ENROLLMENT", _fmt_int(k.get("schools_with_enrollment")))
-    c3.metric("TOTAL DISTRICTS", _fmt_int(k.get("total_districts")))
-    c4.metric("STATE PTR", _fmt_ptr(k.get("ptr")))
-    c5.metric("TOTAL STUDENTS", _fmt_int(k.get("total_students")))
-    c6.metric("TOTAL TEACHERS", _fmt_int(k.get("total_teachers")))
+    c1.metric("🏫 Total Schools", _fmt_int(k.get("total_schools")))
+    c2.metric("🎓 Schools with Enrollment", _fmt_int(k.get("schools_with_enrollment")))
+    c3.metric("🗺️ Districts", _fmt_int(k.get("total_districts")))
+    c4.metric("📊 State PTR", _fmt_ptr(k.get("ptr")))
+    c5.metric("👥 Total Students", _fmt_int(k.get("total_students")))
+    c6.metric("👨‍🏫 Total Teachers", _fmt_int(k.get("total_teachers")))
 
     st.markdown("### 📚 Grade-Level Enrollment (Boys vs Girls)")
     enrollment_df = _grade_enrollment(filters)
@@ -1119,7 +1122,7 @@ def render_us_state_dashboard():
                 district_chart.head(20),
                 x="district_name",
                 y="ptr",
-                title="District-Level PTR Analysis (Top 20)",
+                title="District PTR Comparison (Top 20 by School Count)",
                 labels={"district_name": "District", "ptr": "PTR"},
                 color="ptr",
                 color_continuous_scale="RdYlGn_r",
@@ -1135,7 +1138,7 @@ def render_us_state_dashboard():
         if "PTR" in display_district_df.columns:
             display_district_df["PTR"] = display_district_df["PTR"].apply(_fmt_ptr)
         _render_dataframe(display_district_df, use_container_width=True, hide_index=True)
-        _export_buttons(display_district_df, "us_district_kpis_2024_2025")
+        _export_buttons(display_district_df, "us_district_kpis_2024_2025", csv_label="📥 Download District Data (CSV)", excel_label="📊 Download District Data (Excel)")
     else:
         st.info("No district-level data available for the selected filters.")
 
@@ -1167,7 +1170,7 @@ def render_us_state_dashboard():
             if "PTR" in display_city_df.columns:
                 display_city_df["PTR"] = display_city_df["PTR"].apply(_fmt_ptr)
             _render_dataframe(display_city_df, use_container_width=True, hide_index=True)
-            _export_buttons(display_city_df, "us_city_kpis_2024_2025")
+            _export_buttons(display_city_df, "us_city_kpis_2024_2025", csv_label="📥 Download City Data (CSV)", excel_label="📊 Download City Data (Excel)")
         else:
             st.info("No city-level data available for the selected district.")
 

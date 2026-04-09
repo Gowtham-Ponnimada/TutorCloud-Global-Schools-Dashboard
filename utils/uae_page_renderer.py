@@ -397,7 +397,7 @@ def _build_sidebar_filters() -> dict:
         filters = {}
         if emirate_col:
             opts = _distinct("uae_fact_enrollment", emirate_col)
-            filters["emirate"] = {"col": emirate_col, "val": _sel("🏙️ Emirate", opts, "uae_emirate")}
+            filters["emirate"] = {"col": emirate_col, "val": _sel("🗺️ Select Emirate", opts, "uae_emirate")}
         if edu_type_col:
             opts = _union_distinct_year([
                 ("uae_fact_enrollment", edu_type_col),
@@ -405,12 +405,12 @@ def _build_sidebar_filters() -> dict:
                 ("uae_fact_teachers_emirate", tch_edu_type_col),
                 ("uae_fact_pass_fail", pf_edu_type_col),
             ])
-            filters["education_type"] = {"col": edu_type_col, "val": _sel("📚 Education Type", opts, "uae_edu_type")}
+            filters["education_type"] = {"col": edu_type_col, "val": _sel("📖 Education Type", opts, "uae_edu_type")}
         if gender_col:
             opts = _distinct("uae_fact_enrollment", gender_col)
             filters["gender"] = {
                 "col": gender_col,
-                "val": _sel("👤 Gender", opts, "uae_gender"),
+                "val": _sel("👥 Gender", opts, "uae_gender"),
                 "apply_to": [
                     "uae_fact_enrollment",
                     "uae_fact_student_nationalities",
@@ -903,10 +903,11 @@ def _render_footer():
         """, unsafe_allow_html=True)
 
 def render_uae_state_dashboard():
+    # STATE_DASHBOARD_PARITY_PATCH_V1
     _inject_css()
 
     st.markdown("# 📊 State Dashboard")
-    st.markdown("**Regional Education Overview - UAE**")
+    st.markdown("**Comprehensive State-Level Analysis with Advanced Filters**")
 
     filters = _build_sidebar_filters()
 
@@ -1017,7 +1018,7 @@ def render_uae_state_dashboard():
                 chart_df,
                 x=district_col,
                 y=ptr_col,
-                title="Top 20 Districts by School Count",
+                title="District PTR Comparison (Top 20 by School Count)",
                 hover_data=[c for c in [schools_col, students_col, teachers_col] if c in chart_df.columns],
                 labels={district_col: "District", ptr_col: "PTR"},
             )
@@ -1040,7 +1041,7 @@ def render_uae_state_dashboard():
 
     # India-equivalent conditional lower-level section
     if overview_title not in [None, "", "All", "UAE"]:
-        st.markdown(f"## 🏘️ Curriculum-Level Analysis: {overview_title}")
+        st.markdown(f"## 🏘️ Curriculum-Level PTR Analysis: {overview_title}")
 
         lower_src = _uae_school_directory_summary(filters)
         curriculum_col = _pick_col(lower_src, "curriculum", "Curriculum")

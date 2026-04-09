@@ -390,10 +390,11 @@ def render_nz_home() -> None:
     _render_nz_footer()
 
 def render_nz_state_dashboard() -> None:
+    # STATE_DASHBOARD_PARITY_PATCH_V1
     inject_professional_css()
 
     st.markdown("# 📊 State Dashboard")
-    st.markdown("**Regional Education Overview - New Zealand**")
+    st.markdown("**Comprehensive State-Level Analysis with Advanced Filters**")
 
     bundle = _load_nz_state_school_frame()
     if not bundle.get("ok", False):
@@ -516,7 +517,7 @@ def render_nz_state_dashboard() -> None:
     c1.metric("🏫 Total Schools", _fmt_int(total_schools))
     c2.metric("🎓 Schools with Enrollment", _fmt_int(schools_with_enrollment))
     c3.metric("🗺️ Territorial Authorities", _fmt_int(total_tas))
-    c4.metric("📊 PTR", _fmt_ptr_ratio(ptr_value))
+    c4.metric("📊 State PTR", _fmt_ptr_ratio(ptr_value))
     c5.metric("👥 Total Students", _fmt_int(total_students))
     c6.metric("👨‍🏫 Total Teachers", _fmt_int(total_teachers))
 
@@ -579,7 +580,7 @@ def render_nz_state_dashboard() -> None:
             ta_summary,
             x="territorial_authority",
             y="ptr",
-            title="Top 20 Territorial Authorities by School Count",
+            title="Territorial Authority PTR Comparison (Top 20 by School Count)",
             hover_data=["total_schools", "total_students", "total_teachers"],
             labels={
                 "territorial_authority": "Territorial Authority",
@@ -636,7 +637,7 @@ def render_nz_state_dashboard() -> None:
             sa2_summary,
             x="sa2_name",
             y="ptr",
-            title=f"Top 20 SA2 Areas in {selected_ta} by School Count",
+            title=f"SA2 PTR Comparison in {selected_ta} (Top 20 by School Count)",
             hover_data=["total_schools", "total_students", "total_teachers"],
             labels={
                 "sa2_name": "SA2",
