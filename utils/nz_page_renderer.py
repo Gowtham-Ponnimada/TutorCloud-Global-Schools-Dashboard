@@ -220,6 +220,7 @@ def _fmt_ptr_ratio(ptr_ratio) -> str:
         return "N/A"
 
 def render_nz_home() -> None:
+    # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     # HOME_PARITY_PATCH_V1
     inject_professional_css()
 
@@ -247,19 +248,19 @@ def render_nz_home() -> None:
     regional_full = bundle.get("regional", pd.DataFrame())
     regional_chart = bundle.get("regional_chart", pd.DataFrame())
 
-    st.markdown("# 🏠 TutorCloud Global Dashboard")
-    st.markdown("**National K-12 Education Overview - New Zealand**")
+    st.markdown('<div class="main-header">🏠 TutorCloud Global Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">National K-12 Education Overview - New Zealand</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     st.markdown("## 📊 National Overview")
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL REGIONS", _fmt_int(total_regions))
-    c2.metric("TOTAL SCHOOLS", _fmt_int(total_schools))
-    c3.metric("TOTAL STUDENTS", _fmt_int(total_students))
-    c4.metric("TOTAL TEACHERS", _fmt_int(total_teachers))
-    c5.metric("PTR (NATIONAL)", _fmt_ptr_ratio(ptr_value))
-    c6.metric("STUDENTS/SCHOOL", _fmt_int(students_per_school) if students_per_school is not None else "N/A")
+    c1.metric("🗺️ Total Regions", _fmt_int(total_regions))
+    c2.metric("🏫 Total Schools", _fmt_int(total_schools))
+    c3.metric("👥 Total Students", _fmt_int(total_students))
+    c4.metric("👨‍🏫 Total Teachers", _fmt_int(total_teachers))
+    c5.metric("📊 National PTR", _fmt_ptr_ratio(ptr_value))
+    c6.metric("🏫 Students per School", _fmt_int(students_per_school) if students_per_school is not None else "N/A")
 
     st.markdown("## 🏆 Top 10 Regions by School Count")
     if regional_full is not None and not regional_full.empty:
@@ -390,11 +391,12 @@ def render_nz_home() -> None:
     _render_nz_footer()
 
 def render_nz_state_dashboard() -> None:
+    # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     # STATE_DASHBOARD_PARITY_PATCH_V1
     inject_professional_css()
 
-    st.markdown("# 📊 State Dashboard")
-    st.markdown("**Comprehensive State-Level Analysis with Advanced Filters**")
+    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
 
     bundle = _load_nz_state_school_frame()
     if not bundle.get("ok", False):
@@ -510,7 +512,7 @@ def render_nz_state_dashboard() -> None:
     total_teachers = float(pd.to_numeric(filtered.get("teacher_headcount", 0), errors="coerce").fillna(0).sum()) if "teacher_headcount" in filtered.columns else 0
     ptr_value = (total_students / total_teachers) if total_teachers > 0 else None
 
-    st.markdown("## 📊 Overview")
+    st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
 
@@ -524,7 +526,7 @@ def render_nz_state_dashboard() -> None:
     # -------------------------
     # Enrollment analysis (India slot equivalent)
     # -------------------------
-    st.markdown("## 📚 Enrollment Analysis")
+    st.markdown('<div class="section-header">📚 Enrollment Analysis</div>', unsafe_allow_html=True)
 
     enrollment_df = pd.DataFrame()
     if not filtered.empty and {"school_type", "gender", "total_students"}.issubset(filtered.columns):
@@ -555,7 +557,7 @@ def render_nz_state_dashboard() -> None:
     # -------------------------
     # Territorial Authority PTR Analysis (India district equivalent)
     # -------------------------
-    st.markdown("## 📍 Territorial Authority PTR Analysis")
+    st.markdown('<div class="section-header">📍 Territorial Authority PTR Analysis</div>', unsafe_allow_html=True)
 
     ta_summary = pd.DataFrame()
     if not filtered.empty and "territorial_authority" in filtered.columns:
@@ -610,7 +612,7 @@ def render_nz_state_dashboard() -> None:
     # -------------------------
     # SA2 PTR Analysis (India block/taluk equivalent)
     # -------------------------
-    st.markdown("## 🏘️ SA2 PTR Analysis")
+    st.markdown('<div class="section-header">🏘️ SA2 PTR Analysis</div>', unsafe_allow_html=True)
 
     sa2_summary = pd.DataFrame()
     if selected_ta != "All" and not filtered.empty and "sa2_name" in filtered.columns:
@@ -667,6 +669,7 @@ def render_nz_state_dashboard() -> None:
     _render_nz_footer()
 
 @st.cache_data(show_spinner=False)
+
 def _load_nz_analytics_school_frame():
     """
     Build a stable NZ analytics school-level frame.

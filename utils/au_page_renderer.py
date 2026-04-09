@@ -973,6 +973,7 @@ def _render_metric_cards_overview(agg_data: Dict[str, Any]) -> None:
 # -----------------------------
 
 def render_au_home() -> None:
+    # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     # HOME_PARITY_PATCH_V1
     _inject_au_home_css()
     svc = _get_service()
@@ -986,19 +987,19 @@ def render_au_home() -> None:
     ptr_value = summary.get("student_teacher_ratio")
     students_per_school = round(_num(total_students) / _num(total_schools)) if _num(total_schools) > 0 else None
 
-    st.markdown("# 🏠 TutorCloud Global Dashboard")
-    st.markdown("**National K-12 Education Overview - Australia 2025**")
+    st.markdown('<div class="main-header">🏠 TutorCloud Global Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">National K-12 Education Overview - Australia 2025</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     st.markdown("## 📊 National Overview")
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL STATES/TERRITORIES", _fmt_int(total_states))
-    c2.metric("TOTAL SCHOOLS", _fmt_int(total_schools))
-    c3.metric("TOTAL STUDENTS", _fmt_int(total_students))
-    c4.metric("TOTAL TEACHERS", _fmt_int(total_teachers))
-    c5.metric("PTR (NATIONAL)", _fmt_ptr(ptr_value))
-    c6.metric("STUDENTS/SCHOOL", _fmt_int(students_per_school) if students_per_school is not None else "N/A")
+    c1.metric("🗺️ Total States/Territories", _fmt_int(total_states))
+    c2.metric("🏫 Total Schools", _fmt_int(total_schools))
+    c3.metric("👥 Total Students", _fmt_int(total_students))
+    c4.metric("👨‍🏫 Total Teachers", _fmt_int(total_teachers))
+    c5.metric("📊 National PTR", _fmt_ptr(ptr_value))
+    c6.metric("🏫 Students per School", _fmt_int(students_per_school) if students_per_school is not None else "N/A")
 
     st.markdown("## 🏆 Top 10 States/Territories by School Count")
     if not states_df.empty and {'state_name', 'schools'}.issubset(states_df.columns):

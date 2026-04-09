@@ -523,13 +523,14 @@ def _where_clause(filters: dict, table_alias: str = "", allowed_cols: list = Non
 # ══════════════════════════════════════════════════════════════════════════════
 
 def render_uae_home():
+    # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     # HOME_PARITY_PATCH_V1
     if _inject_css:
         _inject_css()
     st.markdown(UAE_CSS, unsafe_allow_html=True)
 
-    st.markdown("# 🏠 TutorCloud Global Dashboard")
-    st.markdown("**National K-12 Education Overview - UAE 2024-2025**")
+    st.markdown('<div class="main-header">🏠 TutorCloud Global Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">National K-12 Education Overview - UAE 2024-2025</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     filters = {}
@@ -588,17 +589,17 @@ def render_uae_home():
     col4, col5, col6 = st.columns(3)
 
     with col1:
-        st.metric("TOTAL EMIRATES", str(emirates_count))
+        st.metric("🗺️ Total Emirates", str(emirates_count))
     with col2:
-        st.metric("TOTAL SCHOOLS", _fmt(total_sch))
+        st.metric("🏫 Total Schools", _fmt(total_sch))
     with col3:
-        st.metric("TOTAL STUDENTS", _fmt(total_enr))
+        st.metric("👥 Total Students", _fmt(total_enr))
     with col4:
-        st.metric("TOTAL TEACHERS", _fmt(total_tch))
+        st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
     with col5:
-        st.metric("PTR (NATIONAL)", ptr_str)
+        st.metric("📊 National PTR", ptr_str)
     with col6:
-        st.metric("STUDENTS/SCHOOL", sps_str)
+        st.metric("🏫 Students per School", sps_str)
 
     st.markdown("## 🏆 Top 10 Emirates by School Count")
     if sch_em_col and sch_cnt_col:
@@ -903,11 +904,12 @@ def _render_footer():
         """, unsafe_allow_html=True)
 
 def render_uae_state_dashboard():
+    # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     # STATE_DASHBOARD_PARITY_PATCH_V1
     _inject_css()
 
-    st.markdown("# 📊 State Dashboard")
-    st.markdown("**Comprehensive State-Level Analysis with Advanced Filters**")
+    st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
 
     filters = _build_sidebar_filters()
 
@@ -964,7 +966,7 @@ def render_uae_state_dashboard():
     total_teachers = overview.get("total_teachers", 0)
     ptr_value = overview.get("ptr", overview.get("state_ptr", overview.get("ptr_national", None)))
 
-    st.markdown(f"## 📊 Overview: {overview_title}")
+    st.markdown(f'<div class="section-header">📊 Overview: {overview_title}</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
 
@@ -976,7 +978,7 @@ def render_uae_state_dashboard():
     c6.metric("👨‍🏫 Total Teachers", _fmt(total_teachers))
 
     # India-equivalent enrollment slot
-    st.markdown("## 📚 Enrollment Analysis")
+    st.markdown('<div class="section-header">📚 Enrollment Analysis</div>', unsafe_allow_html=True)
     if edu_df is not None and len(edu_df) > 0:
         label_col = _pick_col(edu_df, "education_type", "school_type", "curriculum", "category")
         value_col = _pick_col(edu_df, "total_students", "students", "student_count", "enrollment")
@@ -999,7 +1001,7 @@ def render_uae_state_dashboard():
         st.info("Enrollment analysis is not available for the current selection.")
 
     # India-equivalent district section
-    st.markdown("## 📍 District-Level PTR Analysis")
+    st.markdown('<div class="section-header">📍 District-Level PTR Analysis</div>', unsafe_allow_html=True)
     if district_df is not None and len(district_df) > 0:
         district_col = _pick_col(district_df, "district_name", "district", "emirate", "region_en", "region")
         schools_col = _pick_col(district_df, "total_schools", "schools", "school_count")
@@ -1041,7 +1043,7 @@ def render_uae_state_dashboard():
 
     # India-equivalent conditional lower-level section
     if overview_title not in [None, "", "All", "UAE"]:
-        st.markdown(f"## 🏘️ Curriculum-Level PTR Analysis: {overview_title}")
+        st.markdown(f'<div class="section-header">🏘️ Curriculum-Level PTR Analysis: {overview_title}</div>', unsafe_allow_html=True)
 
         lower_src = _uae_school_directory_summary(filters)
         curriculum_col = _pick_col(lower_src, "curriculum", "Curriculum")
@@ -1151,7 +1153,7 @@ def render_uae_state_dashboard():
         else:
             st.info("No curriculum-level data available for the selected filters.")
     else:
-        st.markdown("## 🏘️ Curriculum-Level Analysis")
+        st.markdown('<div class="section-header">🏘️ Curriculum-Level PTR Analysis</div>', unsafe_allow_html=True)
         st.info("Select a specific Emirate to view curriculum-level analysis.")
 
     _render_footer()

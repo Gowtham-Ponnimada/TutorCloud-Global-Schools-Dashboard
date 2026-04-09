@@ -888,6 +888,7 @@ def _render_footer():
 
 
 def render_us_home():
+    # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     # HOME_PARITY_PATCH_V1
     _inject_css()
     if not _phase1_ready():
@@ -896,19 +897,19 @@ def render_us_home():
 
     summary = _national_summary()
 
-    st.markdown("# 🏠 TutorCloud Global Dashboard")
-    st.markdown("**National K-12 Education Overview - United States 2024-2025**")
+    st.markdown('<div class="main-header">🏠 TutorCloud Global Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">National K-12 Education Overview - United States 2024-2025</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     st.markdown("## 📊 National Overview")
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL STATES", _fmt_int(summary.get("total_states")))
-    c2.metric("TOTAL SCHOOLS", _fmt_int(summary.get("total_schools")))
-    c3.metric("TOTAL STUDENTS", _fmt_int(summary.get("total_students")))
-    c4.metric("TOTAL TEACHERS", _fmt_int(summary.get("total_teachers")))
-    c5.metric("PTR (NATIONAL)", _fmt_ptr(summary.get("ptr")))
-    c6.metric("STUDENTS/SCHOOL", _fmt_int(summary.get("students_per_school")))
+    c1.metric("🗺️ Total States", _fmt_int(summary.get("total_states")))
+    c2.metric("🏫 Total Schools", _fmt_int(summary.get("total_schools")))
+    c3.metric("👥 Total Students", _fmt_int(summary.get("total_students")))
+    c4.metric("👨‍🏫 Total Teachers", _fmt_int(summary.get("total_teachers")))
+    c5.metric("📊 National PTR", _fmt_ptr(summary.get("ptr")))
+    c6.metric("🏫 Students per School", _fmt_int(summary.get("students_per_school")))
 
     st.markdown("## 🏆 Top 10 States by School Count")
     df_top_schools = _top_states_by_schools(10)
@@ -993,7 +994,7 @@ def render_us_home():
             Drill down into state and district-level data with advanced filtering.
             <ul style='margin-top: 0.5rem;'>
                 <li>Filter by school category, management, and district type</li>
-                <li>Compare across regions</li>
+                <li>Compare across states</li>
                 <li>Export detailed reports</li>
             </ul>
             </div>
@@ -2003,6 +2004,7 @@ def _base_where(filters: dict | None = None, alias: str = 'ds'):
 
 
 def render_us_state_dashboard():
+    # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     _inject_css()
     if not _phase1_ready():
         _render_missing_data_notice()
@@ -2050,11 +2052,11 @@ def render_us_state_dashboard():
             _plot_bar(enrollment_df, 'grade', 'total_students', 'Grade-wise Enrollment')
     with chart_right:
         city_mix_df = _schools_by_city(filters)
-        _plot_bar(city_mix_df, 'city', 'school_count', 'Top Locations by School Count', orientation='h')
+        _plot_bar(city_mix_df, 'city', 'school_count', 'Top Cities by School Count', orientation='h')
     if not enrollment_df.empty:
         export_enrollment_df = enrollment_df.rename(columns={'grade': 'Grade', 'total_students': 'Total Students'})
         _render_dataframe(export_enrollment_df, use_container_width=True, hide_index=True)
-        _export_buttons(export_enrollment_df, 'us_grade_enrollment_2024_2025', csv_label='📥 Download CSV', excel_label='📊 Download Excel')
+        _export_buttons(export_enrollment_df, 'us_grade_enrollment_2024_2025', csv_label='📥 Download CSV', excel_label='📊 Download City Data (Excel)')
 
     st.markdown('<div class="section-header">📍 District-Level PTR Analysis</div>', unsafe_allow_html=True)
     district_df = _district_kpi_table(filters, 100)
@@ -2077,27 +2079,28 @@ def render_us_state_dashboard():
         st.info('No district-level data available for the selected filters.')
 
     if filters.get('district') and filters.get('district') != 'All':
-        st.markdown(f'<div class="section-header">🏘️ Block/Taluk-Level PTR Analysis: {filters.get("district")}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-header">🏙️ City-Level PTR Analysis: {filters.get("district")}</div>', unsafe_allow_html=True)
         city_df = _city_kpi_table(filters, 100)
         if not city_df.empty:
             city_chart = city_df.copy()
             city_chart = city_chart[city_chart['ptr'].notna()].copy() if 'ptr' in city_chart.columns else city_chart
             if not city_chart.empty:
                 city_chart['ptr_formatted'] = city_chart['ptr'].apply(_fmt_ptr)
-                fig_city = px.bar(city_chart.head(20), x='city', y='ptr', title=f'Block/Taluk PTR Comparison in {filters.get("district")} (Top 20)', labels={'city': 'Block/Taluk', 'ptr': 'PTR'}, color='ptr', color_continuous_scale='RdYlGn_r', custom_data=['ptr_formatted'])
+                fig_city = px.bar(city_chart.head(20), x='city', y='ptr', title=f'City PTR Comparison in {filters.get("district")} (Top 20 by School Count)', labels={'city': 'City', 'ptr': 'PTR'}, color='ptr', color_continuous_scale='RdYlGn_r', custom_data=['ptr_formatted'])
                 fig_city.update_traces(hovertemplate='<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>')
                 fig_city.update_layout(xaxis_tickangle=-45, margin=dict(l=60, r=40, t=80, b=120))
                 st.plotly_chart(fig_city, use_container_width=True, config={'displayModeBar': False})
             display_city_df = city_df[[c for c in ['city', 'total_schools', 'total_students', 'total_teachers', 'ptr'] if c in city_df.columns]].copy()
-            display_city_df.columns = ['Block/Taluk', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
+            display_city_df.columns = ['City', 'Total Schools', 'Total Students', 'Total Teachers', 'PTR']
             display_city_df['PTR'] = display_city_df['PTR'].apply(_fmt_ptr)
             _render_dataframe(display_city_df, use_container_width=True, hide_index=True)
-            _export_buttons(display_city_df, 'us_city_kpis_2024_2025', csv_label='📥 Download Block/Taluk Data (CSV)', excel_label='📊 Download Excel')
+            _export_buttons(display_city_df, 'us_city_kpis_2024_2025', csv_label='📥 Download City Data (CSV)', excel_label='📊 Download Excel')
         else:
-            st.info('No block-level data available for the selected district.')
+            st.info('No city-level data available for the selected district.')
 
     st.markdown('<div class="section-header">🏫 School Directory</div>', unsafe_allow_html=True)
     directory_df = _directory_table(filters, 1000)
     _render_dataframe(directory_df, use_container_width=True, height=520, hide_index=True)
     _export_buttons(directory_df, 'us_directory_extract_2024_2025', csv_label='📥 Download CSV', excel_label='📊 Download Excel')
     _render_footer()
+
