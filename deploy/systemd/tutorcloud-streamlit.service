@@ -1,0 +1,18 @@
+[Unit]
+Description=TutorCloud Streamlit App
+After=network.target
+
+[Service]
+User=noagedevadmin
+WorkingDirectory=/home/noagedevadmin/tutorcloud/tutorcloud-global-dashboard
+Environment=DB_HOST=localhost
+Environment=DB_PORT=5432
+Environment=DB_NAME=tutorcloud_db
+Environment=DB_USER=tutorcloud_admin
+Environment=DB_PASSWORD=TutorCloud2024!Secure
+ExecStart=/home/noagedevadmin/tutorcloud/tutorcloud-global-dashboard/venv/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
