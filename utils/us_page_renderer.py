@@ -24,6 +24,8 @@ US_COLORS = {
     "light": "#EFF6FF",
 }
 
+INDIA_PARITY_GRADIENT = ["#E3F2FD", "#90CAF9", "#1E88E5"]
+
 
 def _load_db_config():
     cfg = {
@@ -103,12 +105,19 @@ def _inject_css():
                 padding:.85rem 1rem; margin:.5rem 0 1rem 0;
             }}
             .us-card {{
-                background:white; border:1px solid {US_COLORS['border']}; border-left:4px solid {US_COLORS['blue']};
-                border-radius:12px; padding:1rem; box-shadow:0 2px 8px rgba(0,0,0,.04); margin-bottom:.75rem;
+                background:white;
+                border:3px solid {US_COLORS['blue']};
+                border-radius:12px;
+                padding:1rem;
+                box-shadow:0 4px 12px rgba(0,0,0,.08);
+                margin-bottom:.75rem;
             }}
             [data-testid="stMetric"] {{
-                background:white; border:1px solid {US_COLORS['border']}; border-left:4px solid {US_COLORS['blue']};
-                border-radius:12px; padding:.65rem .85rem; box-shadow:0 2px 8px rgba(0,0,0,.04);
+                background:white;
+                border:3px solid {US_COLORS['blue']};
+                border-radius:12px;
+                padding:.85rem 1rem;
+                box-shadow:0 4px 12px rgba(0,0,0,.08);
             }}
         </style>
         """,
@@ -195,27 +204,83 @@ def _school_levels(state_name: str = "All") -> list[str]:
 
 def _build_sidebar_filters() -> dict:
     with st.sidebar:
-        st.markdown("## 🇺🇸 US Filters")
+        st.markdown("## 🔎 Filters")
         st.caption("NCES CCD Final v1a · 2024–2025 only")
+
         state_opts = ["All"] + _states()
         state = st.selectbox("State", state_opts, index=0, key="us_state")
+
         district_opts = _districts(state)
         districts = st.multiselect("District", district_opts, key="us_districts")
+
         level_opts = _school_levels(state)
         school_levels = st.multiselect("School Level", level_opts, key="us_levels")
+
         charter = st.selectbox("Charter", ["All", "Yes", "No"], index=0, key="us_charter")
-        virtual = st.selectbox("Virtual", ["All"] + _distinct_values(
-            f"SELECT DISTINCT virtual_text FROM {SCHEMA}.dim_schools WHERE school_year = %s AND virtual_text IS NOT NULL ORDER BY virtual_text",
-            [DASHBOARD_YEAR],
-            "virtual_text",
-        ), index=0, key="us_virtual")
-        return {
+
+        virtual = st.selectbox(
+            "Virtual",
+            ["All"] + _distinct_values(
+                f"""
+                SELECT DISTINCT virtual_text
+                FROM {SCHEMA}.dim_schools
+                WHERE school_year = %s
+                  AND virtual_text IS NOT NULL
+                ORDER BY virtual_text
+                """,
+                [DASHBOARD_YEAR],
+                "virtual_text",
+            ),
+            index=0,
+            key="us_virtual",
+        )
+
+        filters = {
             "state": state,
             "districts": districts,
             "school_levels": school_levels,
             "charter": charter,
             "virtual": virtual,
         }
+
+        st.markdown("---")
+        _render_active_filters(filters)
+        return filters
+
+
+def _render_active_filters(filters: dict):
+    st.markdown("### Active Filters")
+
+    active = []
+
+    if filters.get("state") and filters["state"] != "All":
+        active.append(f"State: {filters['state']}")
+
+    if filters.get("districts"):
+        selected = filters["districts"]
+        preview = ", ".join(selected[:3])
+        if len(selected) > 3:
+            preview += f" +{len(selected) - 3} more"
+        active.append(f"District: {preview}")
+
+    if filters.get("school_levels"):
+        selected = filters["school_levels"]
+        preview = ", ".join(selected[:3])
+        if len(selected) > 3:
+            preview += f" +{len(selected) - 3} more"
+        active.append(f"School Level: {preview}")
+
+    if filters.get("charter") and filters["charter"] != "All":
+        active.append(f"Charter: {filters['charter']}")
+
+    if filters.get("virtual") and filters["virtual"] != "All":
+        active.append(f"Virtual: {filters['virtual']}")
+
+    if active:
+        for item in active:
+            st.caption(f"• {item}")
+    else:
+        st.caption("All data")
 
 
 def _base_where(filters: dict | None = None, alias: str = "ds"):
@@ -254,10 +319,10 @@ def _export_buttons(df: pd.DataFrame, prefix: str):
         xlsx_data = bio.getvalue()
     c1, c2 = st.columns(2)
     with c1:
-        st.download_button("⬇️ Export CSV", csv_data, f"{prefix}.csv", "text/csv", use_container_width=True)
+        st.download_button("📥 Download CSV", csv_data, f"{prefix}.csv", "text/csv", use_container_width=True)
     with c2:
         st.download_button(
-            "⬇️ Export Excel",
+            "📊 Download Excel",
             xlsx_data,
             f"{prefix}.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -269,22 +334,57 @@ def _plot_bar(df: pd.DataFrame, x: str, y: str, title: str, orientation: str = "
     if df is None or df.empty:
         st.info(f"No data available for {title}.")
         return
-    fig = px.bar(
-        df,
-        x=x if orientation == "v" else y,
-        y=y if orientation == "v" else x,
-        orientation=orientation,
-        color=color,
-        title=title,
-        color_discrete_sequence=px.colors.qualitative.Set2,
-    )
+
+    plot_kwargs = {
+        "data_frame": df,
+        "x": x if orientation == "v" else y,
+        "y": y if orientation == "v" else x,
+        "orientation": orientation,
+        "title": title,
+    }
+
+    if y in df.columns:
+        plot_kwargs["text"] = y
+
+    color_field = color or (y if y in df.columns else None)
+    if color_field and color_field in df.columns:
+        plot_kwargs["color"] = color_field
+        if pd.api.types.is_numeric_dtype(df[color_field]):
+            plot_kwargs["color_continuous_scale"] = INDIA_PARITY_GRADIENT
+        else:
+            plot_kwargs["color_discrete_sequence"] = ["#1E88E5"]
+    else:
+        plot_kwargs["color_discrete_sequence"] = ["#1E88E5"]
+
+    fig = px.bar(**plot_kwargs)
+
     fig.update_layout(
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=10, r=10, t=55, b=10),
-        font=dict(family="Segoe UI"),
+        margin=dict(
+            l=70 if orientation == "v" else 140,
+            r=50,
+            t=50,
+            b=150 if orientation == "v" else 30,
+        ),
+        font=dict(family="Segoe UI", size=11),
         legend_title_text="",
+        showlegend=False,
+        xaxis_tickangle=-45 if orientation == "v" else 0,
     )
+
+    fig.update_traces(
+        marker_line_color="white",
+        marker_line_width=1.5,
+        cliponaxis=False,
+    )
+
+    if y in df.columns and pd.api.types.is_numeric_dtype(df[y]):
+        fig.update_traces(
+            texttemplate="%{text:,.0f}",
+            textposition="outside" if orientation == "v" else "auto",
+        )
+
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
@@ -540,13 +640,16 @@ def render_us_home():
 
     summary = _national_summary()
 
-    st.markdown("<div class='us-title'>🇺🇸 United States Education Dashboard</div>", unsafe_allow_html=True)
-    st.markdown("<div class='us-subtitle'>National K–12 overview using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
+    st.markdown("# 🏠 TutorCloud Global Dashboard")
+    st.markdown("**National K-12 Education Overview - United States 2024-25**")
+    st.caption("NCES CCD Final v1a · 2024–2025 only")
+    st.markdown("---")
+    st.markdown("## 📊 National Overview")
     _render_data_quality_note()
 
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL STATES/JURISDICTIONS", _fmt_int(summary.get("total_states")))
+    c1.metric("TOTAL STATES", _fmt_int(summary.get("total_states")))
     c2.metric("TOTAL SCHOOLS", _fmt_int(summary.get("total_schools")))
     c3.metric("TOTAL STUDENTS", _fmt_int(summary.get("total_students")))
     c4.metric("TOTAL TEACHERS", _fmt_int(summary.get("total_teachers")))
@@ -559,7 +662,7 @@ def render_us_home():
     with right:
         _plot_bar(_top_states_by_students(20), "state_name", "total_students", "Top 20 States by Student Enrollment")
 
-    st.markdown("### 💡 Key Insights")
+    st.markdown("## 💡 Key Insights")
     i1, i2, i3 = st.columns(3)
     with i1:
         st.info(f"**School Coverage**\n\nThe 2024–2025 US dataset covers **{_fmt_int(summary.get('total_schools'))}** public schools across **{_fmt_int(summary.get('total_states'))}** states and jurisdictions.")
@@ -568,7 +671,7 @@ def render_us_home():
     with i3:
         st.warning(f"**School Size**\n\nAverage public school size is **{_fmt_int(summary.get('students_per_school'))}** students per school based on current 2024–2025 CCD totals.")
 
-    st.markdown("### 🧭 Explore More")
+    st.markdown("## 🧭 Explore More")
     nav1, nav2 = st.columns(2)
     with nav1:
         st.markdown(
@@ -580,7 +683,12 @@ def render_us_home():
                 📊 State Dashboard
             </a>
             <div style='padding:.5rem;color:#757575;font-size:.9rem;'>
-                Drill into state and district totals, grade enrollment, city mix, and school-level directory facts.
+                Drill down into state and district-level data with advanced filtering.
+                <ul style='margin-top: 0.5rem;'>
+                    <li>Filter by school level, charter, and virtual status</li>
+                    <li>Compare across states and districts</li>
+                    <li>Export detailed reports</li>
+                </ul>
             </div>
             """,
             unsafe_allow_html=True,
@@ -595,7 +703,12 @@ def render_us_home():
                 📈 Analytics
             </a>
             <div style='padding:.5rem;color:#757575;font-size:.9rem;'>
-                Review geographic coverage, performance proxies, comparative analysis, and build exportable custom reports.
+                Interactive analytics with geographic maps, performance metrics, and custom reports.
+                <ul style='margin-top: 0.5rem;'>
+                    <li>Geographic coverage views</li>
+                    <li>Comparative analysis</li>
+                    <li>Custom report builder</li>
+                </ul>
             </div>
             """,
             unsafe_allow_html=True,
@@ -610,21 +723,23 @@ def render_us_state_dashboard():
 
     filters = _build_sidebar_filters()
     title_state = filters.get("state") if filters.get("state") and filters.get("state") != "All" else "All States"
-    st.markdown(f"<div class='us-title'>📊 US State Dashboard — {title_state}</div>", unsafe_allow_html=True)
-    st.markdown("<div class='us-subtitle'>State and district analysis using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='us-title'>📊 State Dashboard</div>", unsafe_allow_html=True)
+    st.markdown("<div class='us-subtitle'>Comprehensive State-Level Analysis with Advanced Filters</div>", unsafe_allow_html=True)
+    st.caption("NCES CCD Final v1a · 2024–2025 only")
+    st.markdown(f"### 📊 Overview: {title_state}")
     _render_data_quality_note()
 
     k = _state_dashboard_kpis(filters)
     c1, c2, c3 = st.columns(3)
     c4, c5, c6 = st.columns(3)
-    c1.metric("TOTAL SCHOOLS", _fmt_int(k.get("total_schools")))
-    c2.metric("SCHOOLS WITH ENROLLMENT", _fmt_int(k.get("schools_with_enrollment")))
-    c3.metric("DISTRICTS", _fmt_int(k.get("total_districts")))
-    c4.metric("STATE PTR", _fmt_ptr(k.get("ptr")))
-    c5.metric("TOTAL STUDENTS", _fmt_int(k.get("total_students")))
-    c6.metric("TOTAL TEACHERS", _fmt_int(k.get("total_teachers")))
+    c1.metric("🏫 Total Schools", _fmt_int(k.get("total_schools")))
+    c2.metric("🎓 Schools with Enrollment", _fmt_int(k.get("schools_with_enrollment")))
+    c3.metric("🗺️ Districts", _fmt_int(k.get("total_districts")))
+    c4.metric("📊 State PTR", _fmt_ptr(k.get("ptr")))
+    c5.metric("👥 Total Students", _fmt_int(k.get("total_students")))
+    c6.metric("👨‍🏫 Total Teachers", _fmt_int(k.get("total_teachers")))
 
-    t1, t2, t3, t4 = st.tabs(["Overview", "Enrollment", "District Analysis", "Directory"])
+    t1, t2, t3, t4 = st.tabs(["📊 Overview", "📚 Enrollment Analysis", "📍 District Analysis", "🏫 School Directory"])
 
     with t1:
         left, right = st.columns(2)
@@ -660,7 +775,9 @@ def render_us_analytics():
         _render_missing_data_notice()
         return
 
-    st.markdown("<div class='us-title'>📈 US Analytics</div>", unsafe_allow_html=True)
+    st.markdown("<div class='us-title'>📊 Analytics Dashboard</div>", unsafe_allow_html=True)
+    st.markdown("<div class='us-subtitle'>Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>", unsafe_allow_html=True)
+    st.caption("NCES CCD Final v1a · 2024–2025 only")
     st.markdown("<div class='us-subtitle'>Analytics and reporting using NCES CCD Final v1a · 2024–2025 only.</div>", unsafe_allow_html=True)
     _render_data_quality_note()
 
@@ -685,12 +802,12 @@ def render_us_analytics():
         perf = _state_dashboard_kpis(perf_filters)
         k1, k2, k3 = st.columns(3)
         k4, k5, k6 = st.columns(3)
-        k1.metric("TOTAL SCHOOLS", _fmt_int(perf.get("total_schools")))
-        k2.metric("SCHOOLS WITH ENROLLMENT", _fmt_int(perf.get("schools_with_enrollment")))
-        k3.metric("DISTRICTS", _fmt_int(perf.get("total_districts")))
+        k1.metric("Total Schools", _fmt_int(perf.get("total_schools")))
+        k2.metric("Schools with Enrollment", _fmt_int(perf.get("schools_with_enrollment")))
+        k3.metric("Districts", _fmt_int(perf.get("total_districts")))
         k4.metric("PTR", _fmt_ptr(perf.get("ptr")))
-        k5.metric("TOTAL STUDENTS", _fmt_int(perf.get("total_students")))
-        k6.metric("TOTAL TEACHERS", _fmt_int(perf.get("total_teachers")))
+        k5.metric("Total Students", _fmt_int(perf.get("total_students")))
+        k6.metric("Total Teachers", _fmt_int(perf.get("total_teachers")))
         perf_table = _district_kpi_table(perf_filters, 100) if perf_state != "All" else _state_metric_frame()
         st.dataframe(perf_table, use_container_width=True, hide_index=True)
         _export_buttons(perf_table, "us_performance_metrics_2024_2025")
