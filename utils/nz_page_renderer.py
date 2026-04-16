@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from io import BytesIO
 from pathlib import Path
 from ui_styles import inject_professional_css
 
@@ -29,6 +30,67 @@ def _fmt_float(value, digits: int = 2) -> str:
         return f"{float(value):,.{digits}f}"
     except Exception:
         return "—"
+
+
+def _num(value) -> float:
+    try:
+        if value is None or pd.isna(value):
+            return 0.0
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def _excel_bytes(df: pd.DataFrame, sheet_name: str = "Report") -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+    output.seek(0)
+    return output.getvalue()
+
+
+def _export_buttons(df: pd.DataFrame, csv_name: str, excel_name: str | None = None, *, key_prefix: str = "nz_export") -> None:
+    if df is None or df.empty:
+        return
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="📥 Download CSV",
+            data=_csv_bytes(df),
+            file_name=csv_name,
+            mime="text/csv",
+            key=f"{key_prefix}_csv",
+        )
+    with col2:
+        try:
+            st.download_button(
+                label="📊 Download Excel",
+                data=_excel_bytes(df),
+                file_name=excel_name or csv_name.replace(".csv", ".xlsx"),
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"{key_prefix}_xlsx",
+            )
+        except Exception:
+            st.caption("Excel export is unavailable in the current environment.")
+
+
+def _active_filter_items(filter_map: dict[str, str]) -> list[str]:
+    return [f"{label}: {value}" for label, value in filter_map.items() if value and value != "All"]
+
+
+def _ptr_ratio_from_frame(df: pd.DataFrame, *, student_col: str = "total_students", teacher_col: str = "teacher_headcount") -> float | None:
+    if df is None or df.empty or student_col not in df.columns or teacher_col not in df.columns:
+        return None
+    students = pd.to_numeric(df[student_col], errors="coerce")
+    teachers = pd.to_numeric(df[teacher_col], errors="coerce")
+    valid = students.notna() & teachers.fillna(0).gt(0)
+    if not valid.any():
+        return None
+    return float(students[valid].sum()) / float(teachers[valid].sum())
 
 
 def _render_nz_footer():
@@ -138,6 +200,8 @@ def _load_nz_home_bundle():
         "total_teacher_ftte": total_teacher_ftte,
         "teacher_year": teacher_year,
         "ptr_ftte": ptr_ftte,
+        "ptr_headcount": (overlap_students / overlap_teacher_headcount) if overlap_teacher_headcount else None,
+        "overlap_teacher_headcount": overlap_teacher_headcount,
         "students_per_school": students_per_school,
         "overlap_students": overlap_students,
         "overlap_schools": overlap_schools,
@@ -243,7 +307,7 @@ def render_nz_home() -> None:
     total_schools = bundle.get("total_schools", 0)
     total_students = bundle.get("total_students", 0)
     total_teachers = bundle.get("total_teacher_headcount", 0)
-    ptr_value = bundle.get("ptr_ftte")
+    ptr_value = bundle.get("ptr_headcount") or bundle.get("ptr_ftte")
     students_per_school = bundle.get("students_per_school")
     regional_full = bundle.get("regional", pd.DataFrame())
     regional_chart = bundle.get("regional_chart", pd.DataFrame())
@@ -282,6 +346,7 @@ def render_nz_home() -> None:
             fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=11)
             fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 11}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=10)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Schools'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            _export_buttons(df_sch.rename(columns={'region': 'Regional Council', 'total_schools': 'Total Schools'}), 'nz_home_regional_school_counts.csv', key_prefix='nz_home_schools')
 
     st.markdown("## 📚 Top 20 Regions by Student Enrollment")
     if regional_chart is not None and not regional_chart.empty:
@@ -303,6 +368,7 @@ def render_nz_home() -> None:
             fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside', marker_line_color='white', marker_line_width=1.5, textfont_size=10)
             fig.update_layout(height=480, plot_bgcolor='white', paper_bgcolor='white', font={'family': 'Segoe UI', 'size': 10}, xaxis_tickangle=-45, showlegend=False, xaxis=dict(showgrid=False, title='', tickfont=dict(size=9)), yaxis=dict(showgrid=True, gridcolor='#F0F0F0', title='Total Students'), margin=dict(l=70, r=50, t=50, b=150), coloraxis_showscale=False)
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            _export_buttons(df_std.rename(columns={'region': 'Regional Council', 'total_students': 'Total Students'}), 'nz_home_regional_student_counts.csv', key_prefix='nz_home_students')
 
     st.markdown("## 💡 Key Insights")
     i1, i2, i3 = st.columns(3)
@@ -479,23 +545,16 @@ def render_nz_state_dashboard() -> None:
     # -------------------------
     # Sidebar active filters (India-like behavior)
     # -------------------------
-    active_filters = []
-    if selected_region != "All":
-        active_filters.append(f"Regional Council: {selected_region}")
-    if selected_ta != "All":
-        active_filters.append(f"Territorial Authority: {selected_ta}")
-    if selected_sa2 != "All":
-        active_filters.append(f"SA2: {selected_sa2}")
-    if selected_urban != "All":
-        active_filters.append(f"Location: {selected_urban}")
-    if selected_school_type != "All":
-        active_filters.append(f"School Type: {selected_school_type}")
-    if selected_authority != "All":
-        active_filters.append(f"Management Type: {selected_authority}")
-    if selected_gender != "All":
-        active_filters.append(f"Gender: {selected_gender}")
-    if selected_education_region != "All":
-        active_filters.append(f"Education Region: {selected_education_region}")
+    active_filters = _active_filter_items({
+        "Regional Council": selected_region,
+        "Territorial Authority": selected_ta,
+        "SA2": selected_sa2,
+        "Location": selected_urban,
+        "School Type": selected_school_type,
+        "Management Type": selected_authority,
+        "Gender": selected_gender,
+        "Education Region": selected_education_region,
+    })
 
     if active_filters:
         st.sidebar.markdown("### Active Filters")
@@ -510,7 +569,7 @@ def render_nz_state_dashboard() -> None:
     total_tas = int(filtered["territorial_authority"].nunique()) if "territorial_authority" in filtered.columns else 0
     total_students = float(pd.to_numeric(filtered.get("total_students", 0), errors="coerce").fillna(0).sum()) if "total_students" in filtered.columns else 0
     total_teachers = float(pd.to_numeric(filtered.get("teacher_headcount", 0), errors="coerce").fillna(0).sum()) if "teacher_headcount" in filtered.columns else 0
-    ptr_value = (total_students / total_teachers) if total_teachers > 0 else None
+    ptr_value = _ptr_ratio_from_frame(filtered, teacher_col="teacher_headcount")
 
     st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
@@ -575,6 +634,7 @@ def render_nz_state_dashboard() -> None:
             pd.to_numeric(ta_summary.loc[valid_ta, "total_students"], errors="coerce")
             / pd.to_numeric(ta_summary.loc[valid_ta, "total_teachers"], errors="coerce")
         )
+        ta_summary = ta_summary[ta_summary['territorial_authority'].fillna('').astype(str).str.strip() != '']
         ta_summary = ta_summary.sort_values("total_schools", ascending=False).head(20)
 
     if not ta_summary.empty:
@@ -600,12 +660,7 @@ def render_nz_state_dashboard() -> None:
             ta_display["ptr"] = pd.to_numeric(ta_display["ptr"], errors="coerce").apply(_fmt_ptr_ratio)
         st.dataframe(ta_display, use_container_width=True, hide_index=True)
 
-        st.download_button(
-            label="📥 Download Territorial Authority Data (CSV)",
-            data=ta_display.to_csv(index=False).encode("utf-8"),
-            file_name="nz_state_dashboard_ta_data.csv",
-            mime="text/csv",
-        )
+        _export_buttons(ta_display, 'nz_state_dashboard_ta_data.csv', key_prefix='nz_state_ta')
     else:
         st.info("Territorial Authority PTR analysis is not available for the current selection.")
 
@@ -630,6 +685,7 @@ def render_nz_state_dashboard() -> None:
             pd.to_numeric(sa2_summary.loc[valid_sa2, "total_students"], errors="coerce")
             / pd.to_numeric(sa2_summary.loc[valid_sa2, "total_teachers"], errors="coerce")
         )
+        sa2_summary = sa2_summary[sa2_summary['sa2_name'].fillna('').astype(str).str.strip() != '']
         sa2_summary = sa2_summary.sort_values("total_schools", ascending=False).head(20)
 
     if selected_ta == "All":
@@ -657,12 +713,7 @@ def render_nz_state_dashboard() -> None:
             sa2_display["ptr"] = pd.to_numeric(sa2_display["ptr"], errors="coerce").apply(_fmt_ptr_ratio)
         st.dataframe(sa2_display, use_container_width=True, hide_index=True)
 
-        st.download_button(
-            label="📥 Download SA2 Data (CSV)",
-            data=sa2_display.to_csv(index=False).encode("utf-8"),
-            file_name="nz_state_dashboard_sa2_data.csv",
-            mime="text/csv",
-        )
+        _export_buttons(sa2_display, 'nz_state_dashboard_sa2_data.csv', key_prefix='nz_state_sa2')
     else:
         st.info("SA2-level PTR analysis is not available for the current selection.")
 
@@ -922,6 +973,7 @@ def render_nz_analytics() -> None:
                     total_teachers=("teacher_headcount", "sum"),
                 )
             )
+            summary = summary[summary[entity_col].fillna('').astype(str).str.strip() != ''].copy()
 
             summary["ptr"] = pd.NA
             valid_ptr = pd.to_numeric(summary["total_teachers"], errors="coerce").fillna(0) > 0
@@ -982,7 +1034,10 @@ def render_nz_analytics() -> None:
                     "ptr": "PTR",
                     "students_per_school": "Students per School",
                 })
+                if 'PTR' in display_df.columns:
+                    display_df['PTR'] = pd.to_numeric(display_df['PTR'], errors='coerce').apply(_fmt_ptr_ratio)
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
+                _export_buttons(display_df, 'nz_analytics_geographic_maps.csv', key_prefix='nz_analytics_geo')
 
     # =========================================================
     # TAB 2: Performance Metrics (India-style structure)
@@ -1022,7 +1077,7 @@ def render_nz_analytics() -> None:
         total_schools = int(perf_df["school_id"].nunique()) if "school_id" in perf_df.columns else len(perf_df)
         total_students = float(pd.to_numeric(perf_df.get("total_students", 0), errors="coerce").fillna(0).sum()) if "total_students" in perf_df.columns else 0
         total_teachers = float(pd.to_numeric(perf_df.get("teacher_headcount", 0), errors="coerce").fillna(0).sum()) if "teacher_headcount" in perf_df.columns else 0
-        ptr_value = (total_students / total_teachers) if total_teachers > 0 else None
+        ptr_value = _ptr_ratio_from_frame(perf_df, teacher_col="teacher_headcount")
         students_per_school = (total_students / total_schools) if total_schools > 0 else None
         teachers_per_school = (total_teachers / total_schools) if total_schools > 0 else None
 
@@ -1052,7 +1107,7 @@ def render_nz_analytics() -> None:
             total_schools = int(df_in["school_id"].nunique()) if "school_id" in df_in.columns else len(df_in)
             total_students = float(pd.to_numeric(df_in.get("total_students", 0), errors="coerce").fillna(0).sum()) if "total_students" in df_in.columns else 0
             total_teachers = float(pd.to_numeric(df_in.get("teacher_headcount", 0), errors="coerce").fillna(0).sum()) if "teacher_headcount" in df_in.columns else 0
-            ptr = (total_students / total_teachers) if total_teachers > 0 else None
+            ptr = _ptr_ratio_from_frame(df_in, teacher_col="teacher_headcount")
             students_per_school = (total_students / total_schools) if total_schools > 0 else None
             return {
                 "Total Schools": total_schools,
@@ -1130,12 +1185,7 @@ def render_nz_analytics() -> None:
                 comparison_df[c] = pd.to_numeric(comparison_df[c], errors="ignore")
             st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
-            st.download_button(
-                label="📥 Download Comparison CSV",
-                data=comparison_df.to_csv(index=False).encode("utf-8"),
-                file_name="nz_analytics_comparison.csv",
-                mime="text/csv",
-            )
+            _export_buttons(comparison_df, 'nz_analytics_comparison.csv', key_prefix='nz_compare')
         else:
             st.info("Choose comparison inputs and click Compare.")
 
@@ -1236,27 +1286,7 @@ def render_nz_analytics() -> None:
                         report["PTR"] = pd.to_numeric(report["PTR"], errors="coerce").apply(_fmt_ptr_ratio)
 
                     st.dataframe(report, use_container_width=True, hide_index=True)
-
-                    st.download_button(
-                        label="📥 Download CSV",
-                        data=report.to_csv(index=False).encode("utf-8"),
-                        file_name="nz_analytics_custom_report.csv",
-                        mime="text/csv",
-                    )
-
-                    try:
-                        from io import BytesIO
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                            report.to_excel(writer, index=False, sheet_name="Report")
-                        st.download_button(
-                            label="📊 Download Excel",
-                            data=output.getvalue(),
-                            file_name="nz_analytics_custom_report.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
-                    except Exception:
-                        st.info("Excel export is unavailable in the current environment.")
+                    _export_buttons(report, 'nz_analytics_custom_report.csv', key_prefix='nz_custom_report')
 
     _render_nz_footer()
 
