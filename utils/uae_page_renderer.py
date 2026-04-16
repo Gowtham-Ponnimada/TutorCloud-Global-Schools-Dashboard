@@ -353,11 +353,37 @@ def _export_buttons(df: pd.DataFrame, prefix: str):
                        key=f"xl_{prefix}")
 
 
+def _filter_value(filters: dict, key: str, default="All"):
+    meta = (filters or {}).get(key, default)
+    if isinstance(meta, dict):
+        return meta.get("val", default)
+    return meta
+
+
+def _active_filter_items(filters: dict, label_map: dict | None = None) -> list[str]:
+    label_map = label_map or {}
+    items = []
+    for key, meta in (filters or {}).items():
+        if str(key).startswith("_"):
+            continue
+        val = meta.get("val") if isinstance(meta, dict) else meta
+        if val in (None, "", "All", []):
+            continue
+        if isinstance(val, list):
+            val = ", ".join(str(v) for v in val if v not in (None, ""))
+        label = label_map.get(key, str(key).replace("_", " ").title())
+        items.append(f"{label}: {val}")
+    return items
+
+
 # ─── Sidebar filters ──────────────────────────────────────────────────────────
 
 def _build_sidebar_filters() -> dict:
     """UAE sidebar – same look as India's sidebar filters."""
     try:
+        st.sidebar.markdown("## 🔎 Filters")
+        st.sidebar.caption("Use the filters below to refine the UAE dashboard view.")
+
         enr_cols = _tbl_cols("uae_fact_enrollment")
         sch_cols = _tbl_cols("uae_fact_schools")
         tch_cols = _tbl_cols("uae_fact_teachers_emirate")
@@ -450,14 +476,19 @@ def _build_sidebar_filters() -> dict:
                 pass  # non-fatal: cross-filter best-effort
 
         # Show active filters in sidebar
-        active = [
-            v["val"]
-            for k, v in filters.items()
-            if not str(k).startswith("_") and v["val"] != "All"
-        ]
+        active = _active_filter_items(
+            filters,
+            {
+                "emirate": "Emirate",
+                "education_type": "Education Type",
+                "gender": "Gender",
+                "nationality": "Nationality Category",
+                "curriculum": "Curriculum",
+            },
+        )
         if active:
             st.sidebar.markdown("---")
-            st.sidebar.markdown("**✅ Active Filters**")
+            st.sidebar.markdown("### ✅ Active Filters")
             for a in active:
                 st.sidebar.markdown(f"- {a}")
         return filters
@@ -530,7 +561,7 @@ def render_uae_home():
     st.markdown(UAE_CSS, unsafe_allow_html=True)
 
     st.markdown('<div class="main-header">🏠 TutorCloud Global Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">National K-12 Education Overview - UAE 2024-2025</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">National K-12 Education Overview – UAE 2024-2025</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     filters = {}
@@ -597,9 +628,9 @@ def render_uae_home():
     with col4:
         st.metric("👨‍🏫 Total Teachers", _fmt(total_tch))
     with col5:
-        st.metric("📊 National PTR", ptr_str)
+        st.metric("📊 PTR (National)", ptr_str)
     with col6:
-        st.metric("🏫 Students per School", sps_str)
+        st.metric("🏫 Students / School", sps_str)
 
     st.markdown("## 🏆 Top 10 Emirates by School Count")
     if sch_em_col and sch_cnt_col:
@@ -688,9 +719,9 @@ def render_uae_home():
         <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
         Drill down into emirate-level data with advanced filtering.
         <ul style='margin-top: 0.5rem;'>
-            <li>Filter by curriculum, education type, gender</li>
+            <li>Filter by curriculum, education type, gender, and nationality</li>
             <li>Compare across Emirates</li>
-            <li>Export detailed reports</li>
+            <li>Export district and curriculum reports</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -716,11 +747,11 @@ def render_uae_home():
         """, unsafe_allow_html=True)
         st.markdown("""
         <div style='padding: 0.5rem; color: #757575; font-size: 0.9rem;'>
-        Interactive analytics with geographic maps, performance metrics, and custom reports.
+        Interactive analytics with geographic maps, performance metrics, comparative analysis, and custom reports.
         <ul style='margin-top: 0.5rem;'>
-            <li>Geographic distribution charts</li>
+            <li>Geographic maps and metric views</li>
             <li>Comparative emirate analysis</li>
-            <li>Custom report builder</li>
+            <li>Custom report builder with exports</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -906,7 +937,9 @@ def _render_footer():
 def render_uae_state_dashboard():
     # FINAL_UI_CLEANUP_PARITY_PATCH_V1
     # STATE_DASHBOARD_PARITY_PATCH_V1
-    _inject_css()
+    if _inject_css:
+        _inject_css()
+    st.markdown(UAE_CSS, unsafe_allow_html=True)
 
     st.markdown('<div class="main-header">📊 State Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Comprehensive State-Level Analysis with Advanced Filters</div>', unsafe_allow_html=True)
@@ -932,31 +965,10 @@ def render_uae_state_dashboard():
         except Exception:
             return "N/A"
 
-    selected_emirate = (
-        filters.get("emirate")
-        or filters.get("region_en")
-        or filters.get("emirate_en")
-        or "UAE"
-    )
+    selected_emirate = _filter_value(filters, "emirate", "UAE")
     overview_title = selected_emirate if selected_emirate not in [None, "", "All"] else "UAE"
 
-    # India-style active filters in sidebar
-    active_filters = []
-    for key, label in [
-        ("emirate", "Emirate"),
-        ("education_type", "Education Type"),
-        ("gender", "Gender"),
-        ("nationality_category", "Nationality Category"),
-        ("curriculum", "Curriculum"),
-    ]:
-        val = filters.get(key)
-        if val not in [None, "", "All", []]:
-            active_filters.append(f"{label}: {val}")
-
-    if active_filters:
-        st.sidebar.markdown("### Active Filters")
-        for item in active_filters:
-            st.sidebar.markdown(f"- {item}")
+    # Active filters are already rendered inside _build_sidebar_filters().
 
     # India-style KPI count: 6 only
     total_schools = overview.get("total_schools", 0)
@@ -973,7 +985,7 @@ def render_uae_state_dashboard():
     c1.metric("🏫 Total Schools", _fmt(total_schools))
     c2.metric("🎓 Schools with Enrollment", _fmt(schools_with_enrollment))
     c3.metric("🗺️ Districts", _fmt(total_districts))
-    c4.metric("📊 State PTR", overview.get("state_ptr", "N/A"))
+    c4.metric("📊 State PTR", _fmt_ptr_ratio(ptr_value))
     c5.metric("👥 Total Students", _fmt(total_students))
     c6.metric("👨‍🏫 Total Teachers", _fmt(total_teachers))
 
@@ -992,9 +1004,17 @@ def render_uae_state_dashboard():
                 color=color_col if color_col in edu_df.columns and color_col != label_col else None,
                 title="Enrollment Analysis",
                 labels={label_col: "Category", value_col: "Students"},
+                text=value_col,
             )
-            fig_edu.update_layout(height=450, xaxis_tickangle=-35)
-            st.plotly_chart(fig_edu, use_container_width=True)
+            fig_edu.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+            fig_edu.update_layout(
+                height=480,
+                xaxis_tickangle=-35,
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                margin=dict(l=60, r=40, t=70, b=110),
+            )
+            st.plotly_chart(fig_edu, use_container_width=True, config={"displayModeBar": False})
         else:
             st.info("Enrollment analysis is not available for the current selection.")
     else:
@@ -1016,6 +1036,7 @@ def render_uae_state_dashboard():
 
         if district_col and ptr_col and district_col in chart_df.columns and ptr_col in chart_df.columns:
             chart_df[ptr_col] = pd.to_numeric(chart_df[ptr_col], errors="coerce")
+            chart_df["ptr_formatted"] = chart_df[ptr_col].apply(_fmt_ptr_ratio)
             fig_district = px.bar(
                 chart_df,
                 x=district_col,
@@ -1023,9 +1044,24 @@ def render_uae_state_dashboard():
                 title="District PTR Comparison (Top 20 by School Count)",
                 hover_data=[c for c in [schools_col, students_col, teachers_col] if c in chart_df.columns],
                 labels={district_col: "District", ptr_col: "PTR"},
+                color=ptr_col,
+                color_continuous_scale="RdYlGn_r",
+                custom_data=["ptr_formatted"],
             )
-            fig_district.update_layout(height=450, xaxis_tickangle=-45)
-            st.plotly_chart(fig_district, use_container_width=True)
+            fig_district.update_traces(
+                hovertemplate="<b>%{x}</b><br>PTR: %{customdata[0]}<extra></extra>",
+                text=chart_df["ptr_formatted"],
+                textposition="outside",
+            )
+            fig_district.update_layout(
+                height=480,
+                xaxis_tickangle=-45,
+                margin=dict(l=60, r=40, t=70, b=120),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                coloraxis_showscale=False,
+            )
+            st.plotly_chart(fig_district, use_container_width=True, config={"displayModeBar": False})
 
         display_df = district_df.copy()
         if ptr_col and ptr_col in display_df.columns:
@@ -1675,9 +1711,10 @@ def _uae_tab_demographics(filters):
 
 def render_uae_analytics():
     # ANALYTICS_PARITY_PATCH_V1
-    from io import BytesIO
 
-    _inject_css()
+    if _inject_css:
+        _inject_css()
+    st.markdown(UAE_CSS, unsafe_allow_html=True)
     st.markdown('<div class="main-header">📊 Analytics Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Enhanced Analytics: Maps, Metrics, Comparison & Reports</div>', unsafe_allow_html=True)
 
@@ -1766,7 +1803,7 @@ def render_uae_analytics():
 
     def _metric_view(df, metric_name):
         mapping = {
-            'PTR (Pupil-Teacher Ratio)': 'PTR',
+            'PTR': 'PTR',
             'Students per School': 'Students per School',
             'Total Students': 'Total Students',
             'Total Schools': 'Total Schools',
@@ -1780,11 +1817,11 @@ def render_uae_analytics():
     tabs = st.tabs(["🗺️ Geographic Maps", "🎯 Performance Metrics", "🔍 Comparative Analysis", "📝 Custom Reports"])
 
     with tabs[0]:
-        st.markdown("### 🗺️ Geographic Heatmaps")
-        st.markdown("Interactive maps showing PTR, enrollment density by emirate/curriculum")
+        st.markdown("### 🗺️ Geographic Maps")
+        st.markdown("Interactive maps showing PTR and enrollment coverage by emirate/curriculum")
         geo_metric = st.selectbox(
             "Select Metric to Visualize",
-            ["PTR (Pupil-Teacher Ratio)", "Students per School", "Total Students", "Total Schools"],
+            ["PTR", "Students per School", "Total Students", "Total Schools"],
             key="uae_geo_metric_parity"
         )
         geo_level = st.radio(
@@ -1812,7 +1849,7 @@ def render_uae_analytics():
                 x="Location",
                 y="Metric Value",
                 color="Metric Value",
-                color_continuous_scale="Blues",
+                color_continuous_scale="RdYlGn_r" if geo_metric == "PTR" else "Viridis",
                 title=f"{geo_metric} by {geo_level} (Top 20)",
             )
             fig.update_layout(
@@ -1861,11 +1898,11 @@ def render_uae_analytics():
         with c5:
             schools_num = _as_float(total_schools)
             students_num = _as_float(total_students)
-            st.metric("🎓 Students / School", f"{(students_num / schools_num):,.2f}" if schools_num else "0.00")
+            st.metric("🎓 Students per School", f"{(students_num / schools_num):,.2f}" if schools_num else "0.00")
         with c6:
             schools_num = _as_float(total_schools)
             teachers_num = _as_float(total_teachers)
-            st.metric("🏫 Teachers / School", f"{(teachers_num / schools_num):,.2f}" if schools_num else "0.00")
+            st.metric("🏫 Teachers per School", f"{(teachers_num / schools_num):,.2f}" if schools_num else "0.00")
 
     with tabs[2]:
         st.markdown("### 🔍 Comparative Analysis Tool")
@@ -1968,27 +2005,7 @@ def render_uae_analytics():
                     report = report[ordered_cols].reset_index(drop=True)
                     st.dataframe(report, use_container_width=True, hide_index=True)
 
-                    st.download_button(
-                        "📥 Download CSV",
-                        report.to_csv(index=False).encode("utf-8"),
-                        "uae_custom_report.csv",
-                        "text/csv",
-                        key="uae_report_csv_parity"
-                    )
-
-                    excel_buffer = BytesIO()
-                    try:
-                        with pd.ExcelWriter(excel_buffer) as writer:
-                            report.to_excel(writer, index=False, sheet_name="Custom Report")
-                        st.download_button(
-                            "📊 Download Excel",
-                            excel_buffer.getvalue(),
-                            "uae_custom_report.xlsx",
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="uae_report_excel_parity"
-                        )
-                    except Exception:
-                        pass
+                    _export_buttons(report, "custom_report")
 
     _render_footer()
 
